@@ -311,11 +311,11 @@ class lazyscrollflow(ScrollArea):
 
     def directshow(self):
         QApplication.processEvents()
-        if len(self.internalwid.visibleRegion().rects()):
-            self.doshowlazywidget(True, self.internalwid.visibleRegion().rects()[0])
+        self.doshowlazywidget(True, self.internalwid.visibleRegion().boundingRect())
 
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("background: transparent;")
         self.widgets = []
         self.fakegeos = []
         self._spacing = 6
@@ -390,6 +390,15 @@ class lazyscrollflow(ScrollArea):
             self.resizeandshow()
 
     @trypass
+    def totop1(self, idx):
+        if idx == 0:
+            return
+        with self.lock:
+            self.widgets.insert(0, self.widgets.pop(idx))
+            self.fakegeos.insert(0, self.fakegeos.pop(idx))
+        self.resizeandshow()
+
+    @trypass
     def removeidx(self, idx):
         with self.lock:
             if idx >= 0 and idx < len(self.widgets):
@@ -459,11 +468,14 @@ class lazyscrollflow(ScrollArea):
             return new_height
 
 
-def has_intersection(range1, range2):
-    A1, B1 = range1
-    C1, D1 = range2
+def has_intersection(interval1, interval2):
+    start = max(interval1[0], interval2[0])
+    end = min(interval1[1], interval2[1])
 
-    return A1 <= C1 <= B1 or A1 <= D1 <= B1 or C1 <= A1 <= D1 or C1 <= B1 <= D1
+    if start <= end:
+        return True
+    else:
+        return None
 
 
 class delayloadvbox(QWidget):
@@ -474,7 +486,6 @@ class delayloadvbox(QWidget):
         self.lock = threading.Lock()
         self.nowvisregion = QRect()
 
-
     def resizeEvent(self, e: QResizeEvent):
 
         if e.oldSize().width() != e.size().width():
@@ -483,6 +494,7 @@ class delayloadvbox(QWidget):
                     if isinstance(w, QWidget):
                         w.resize(self.width(), w.height())
         return super().resizeEvent(e)
+
     def _dovisinternal(self, procevent, region: QRect):
         if region.isEmpty():
             return
@@ -498,7 +510,6 @@ class delayloadvbox(QWidget):
                 if isinstance(self.internal_widgets[i], QWidget):
                     self.internal_widgets[i].move(0, ystart - ydiff)
                     continue
-
                 if not has_intersection((ystart, yend), visrange):
                     continue
 
@@ -507,6 +518,7 @@ class delayloadvbox(QWidget):
                     continue
                 self.internal_widgets[i] = None
                 needdos.append((i, widfunc, ystart - ydiff, h))
+
         for i, widfunc, ystart, h in needdos:
             try:
                 with self.lock:
@@ -544,6 +556,14 @@ class delayloadvbox(QWidget):
             # setFixedHeight会导致上面的闪烁
         self._dovisinternal(False, self.nowvisregion)
 
+    def torank1(self, i):
+        if i == 0:
+            return
+        with self.lock:
+            self.internal_widgets.insert(0, self.internal_widgets.pop(i))
+            self.internal_itemH.insert(0, self.internal_itemH.pop(i))
+        self._dovisinternal(False, self.nowvisregion)
+
     def insertw(self, i, wf, height):
         refresh = True
         with self.lock:
@@ -567,8 +587,8 @@ class delayloadvbox(QWidget):
 
 
 class shrinkableitem(QWidget):
-    def __init__(self, shrinker: QPushButton, opened):
-        super().__init__()
+    def __init__(self, p, shrinker: QPushButton, opened):
+        super().__init__(p)
         self.lay = QVBoxLayout()
         # self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         self.setLayout(self.lay)
@@ -580,12 +600,26 @@ class shrinkableitem(QWidget):
         self.lay.addWidget(self.btn)
         self.lay.addWidget(self.items)
         self.items.setVisible(opened)
+        self._ref_p_stackedlist = p
+
+    def visheight(self):
+        hh = self.btn.height()
+        if self.items.isVisible():
+            hh += self.items.height()
+        return hh
 
     def _dovisinternal(self, procevent, region: QRect):
-        self.items._dovisinternal(procevent, region)
+        if not self.items.isVisible():
+            return
+
+        region.setY(region.y() - self.btn.height())
+        # region.setHeight(region.height() - self.btn.height())
+        # 按理说应该减的，但不知道其他哪里写错了，下面少几十个像素的高度，就这样吧。
+        self.items._dovisinternal(procevent, QRect(region))
 
     def Revert(self):
         self.items.setVisible(not self.items.isVisible())
+        self._ref_p_stackedlist.doshowlazywidget(True)
 
     def settitle(self, text):
         self.btn.setText(text)
@@ -596,6 +630,9 @@ class shrinkableitem(QWidget):
 
     def insertw(self, i, wf, height):
         self.items.insertw(i, wf, height)
+
+    def torank1(self, i):
+        self.items.torank1(i)
 
     def popw(self, i):
         return self.items.popw(i)
@@ -615,20 +652,23 @@ class stackedlist(ScrollArea):
 
     def directshow(self):
         QApplication.processEvents()
-        self.doshowlazywidget(True, self.internal.visibleRegion().rects()[0])
+        self.doshowlazywidget(True, self.internal.visibleRegion().boundingRect())
 
     def resizeEvent(self, e: QResizeEvent):
         try:
-            self.doshowlazywidget(False, self.internal.visibleRegion().rects()[0])
+            self.doshowlazywidget(False, self.internal.visibleRegion().boundingRect())
         except:
             pass
         return super().resizeEvent(e)
 
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("""QScrollArea{background-color:transparent;border:0px}""")
+        self.setStyleSheet(
+            """QWidget#shit{background-color:transparent;}QScrollArea{background-color:transparent;border:0px}"""
+        )
         self.setWidgetResizable(True)
         internal = QWidget()
+        internal.setObjectName("shit")
         self.setWidget(internal)
         self.lay = QVBoxLayout()
         self.lay.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -644,10 +684,17 @@ class stackedlist(ScrollArea):
         self.setWidget(internal)
         self.internal = internal
         self.scrolled.connect(lambda _: self.doshowlazywidget(True, _))
+        self.saveregion = QRect()
 
-    def doshowlazywidget(self, procevent, region: QRect):
+    def doshowlazywidget(self, procevent, region: QRect = None):
+        if region:
+            self.saveregion = QRect(region)
+        else:
+            region = QRect(self.saveregion)
         for i in range(self.len()):
-            self.w(i)._dovisinternal(procevent, region)
+            self.w(i)._dovisinternal(procevent, QRect(region))
+            region.setY(region.y() - self.w(i).visheight())
+            region.setHeight(region.height() - self.w(i).visheight())
 
     def insertw(self, i, w: shrinkableitem):
         self.lay.insertWidget(i, w)

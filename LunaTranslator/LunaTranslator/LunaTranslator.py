@@ -6,6 +6,8 @@ from myutils.config import (
     globalconfig,
     _TR,
     savehook_new_list,
+    uid2gamepath,
+    findgameuidofpath,
     savehook_new_data,
     setlanguage,
     static_data,
@@ -16,9 +18,8 @@ from myutils.utils import (
     minmaxmoveobservefunc,
     parsemayberegexreplace,
     kanjitrans,
-    checkifnewgame,
+    find_or_create_uid,
     checkpostusing,
-    getpostfile,
     stringfyerror,
 )
 from myutils.wrapper import threader
@@ -41,9 +42,10 @@ from gui.attachprocessdialog import AttachProcessDialog
 import windows
 import gobject
 import winsharedutils
-from winsharedutils import pid_running
+from winsharedutils import collect_running_pids
 from myutils.post import POSTSOLVE
 from myutils.utils import nowisdark
+from myutils.audioplayer import audioplayer
 
 
 class commonstylebase(QWidget):
@@ -57,6 +59,7 @@ class commonstylebase(QWidget):
 class MAINUI:
     def __init__(self) -> None:
         super().__init__()
+        self.update_avalable = False
         self.lasttranslatorindex = 0
         self.translators = {}
         self.cishus = {}
@@ -80,6 +83,8 @@ class MAINUI:
         self.edittextui_cached = None
         self.edittextui_sync = True
         self.sqlsavegameinfo = None
+        self.notifyonce = set()
+        self.audioplayer = audioplayer()
 
     @property
     def textsource(self):
@@ -101,9 +106,11 @@ class MAINUI:
         for item in static_data["transoptimi"]:
             name = item["name"]
             try:
-                mm = getpostfile(name)
-                if not mm:
+                checkpath = "./LunaTranslator/transoptimi/" + name + ".py"
+                if os.path.exists(checkpath) == False:
                     continue
+                mm = "transoptimi." + name
+
                 Process = importlib.import_module(mm).Process
 
                 def __(kls, _name):
@@ -154,13 +161,14 @@ class MAINUI:
         self, text, is_auto_run=True, embedcallback=None, onlytrans=False
     ):
         with self.solvegottextlock:
-            return self.textgetmethod_1(text, is_auto_run, embedcallback, onlytrans)
+            self.textgetmethod_1(text, is_auto_run, embedcallback, onlytrans)
 
     def textgetmethod_1(
         self, text, is_auto_run=True, embedcallback=None, onlytrans=False
     ):
 
-        returnandembedcallback = lambda: embedcallback("") if embedcallback else ""
+        safe_embedcallback = embedcallback if embedcallback else lambda _: 1
+        safe_embedcallback_none = functools.partial(safe_embedcallback, "")
 
         if text.startswith("<notrans>"):
             self.translation_ui.displayres.emit(
@@ -189,7 +197,7 @@ class MAINUI:
                     )
                     return
         if text == "" or len(text) > 100000:
-            return returnandembedcallback()
+            return safe_embedcallback_none()
         if onlytrans == False:
             self.currentsignature = time.time()
         try:
@@ -208,7 +216,7 @@ class MAINUI:
                 > (max(globalconfig["maxoriginlength"], globalconfig["maxlength"]))
             )
         ):
-            return returnandembedcallback()
+            return safe_embedcallback_none()
 
         try:
             self.textsource.sqlqueueput(
@@ -248,10 +256,11 @@ class MAINUI:
             len(text_solved) < globalconfig["minlength"]
             or len(text_solved) > globalconfig["maxlength"]
         ):
-            return returnandembedcallback()
+            return safe_embedcallback_none()
 
         self.premtalready = ["premt"]
         self.usefultranslators = list(self.translators.keys())
+        no_available_translator = True
         if "premt" in self.translators:
             try:
                 res = self.translators["premt"].translate(text_solved)
@@ -261,6 +270,7 @@ class MAINUI:
                         _colork = k
                     else:
                         _colork = "premt"
+                    no_available_translator = False
                     self.GetTranslationCallback(
                         onlytrans,
                         _colork,
@@ -289,6 +299,7 @@ class MAINUI:
             # print(keys,usenum,self.lasttranslatorindex)
             for engine in keys:
                 if engine not in self.premtalready:
+                    no_available_translator = False
                     self.translators[engine].gettask(
                         (
                             partial(
@@ -311,6 +322,8 @@ class MAINUI:
                 self.lasttranslatorindex += 1
                 if thistimeusednum >= usenum:
                     break
+        if no_available_translator:
+            safe_embedcallback_none()
 
     def GetTranslationCallback(
         self,
@@ -330,8 +343,8 @@ class MAINUI:
         if embedcallback is None and currentsignature != self.currentsignature:
             return
 
-        returnandembedcallback = lambda x: embedcallback(x) if embedcallback else ""
-
+        safe_embedcallback = embedcallback if embedcallback else lambda _: 1
+        safe_embedcallback_none = functools.partial(safe_embedcallback, "")
         if res.startswith("<msg_translator>"):
             if currentsignature == self.currentsignature:
                 self.translation_ui.displaystatus.emit(
@@ -343,7 +356,7 @@ class MAINUI:
                     False,
                 )
             if len(self.usefultranslators) == 0:
-                returnandembedcallback("")
+                safe_embedcallback_none()
             return
 
         res = self.solveaftertrans(res, optimization_params)
@@ -388,7 +401,7 @@ class MAINUI:
                 globalconfig["embedded"]["as_fast_as_posible"]
                 or classname == globalconfig["embedded"]["translator_2"]
             ):
-                return returnandembedcallback(
+                return safe_embedcallback(
                     kanjitrans(zhconv.convert(res, "zh-tw"))
                     if globalconfig["embedded"]["trans_kanji"]
                     else res
@@ -399,7 +412,9 @@ class MAINUI:
         try:
             time.sleep(globalconfig["textthreaddelay"] / 1000)
             name = self.textsource.currentname
-            names = savehook_new_data[self.textsource.pname]["allow_tts_auto_names_v4"]
+            names = savehook_new_data[self.textsource.gameuid][
+                "allow_tts_auto_names_v4"
+            ]
             needpass = False
             if name in names:
                 needpass = True
@@ -430,7 +445,7 @@ class MAINUI:
                 text = self.ttsrepair(self.currentread, globalconfig["ttscommon"])
                 try:
                     text = self.ttsrepair(
-                        text, savehook_new_data[self.textsource.pname]
+                        text, savehook_new_data[self.textsource.gameuid]
                     )
                 except:
                     pass
@@ -460,19 +475,36 @@ class MAINUI:
 
                 self.reader_usevoice = use
                 self.reader = aclass(
-                    use, self.settin_ui.voicelistsignal, self.settin_ui.mp3playsignal
+                    use, self.settin_ui.voicelistsignal, self.audioplayer.play
                 )
 
-    def selectprocess(self, selectedp):
+    def selectprocess(self, selectedp, title):
         self.textsource = None
         pids, pexe, hwnd = selectedp
-        checkifnewgame(savehook_new_list, pexe, windows.GetWindowText(hwnd))
-        if globalconfig["sourcestatus2"]["texthook"]["use"]:
-            self.textsource = texthook(pids, hwnd, pexe)
+        if len(collect_running_pids(pids)) == 0:
+            return
+        if not title:
+            title = windows.GetWindowText(hwnd)
+
+        if not globalconfig["sourcestatus2"]["texthook"]["use"]:
+            return
+        gameuid = find_or_create_uid(savehook_new_list, pexe, title)
+        if gameuid not in savehook_new_list:
+            savehook_new_list.insert(0, gameuid)
+        else:
+            if globalconfig["startgamenototop"] == False:
+                idx = savehook_new_list.index(gameuid)
+                savehook_new_list.insert(0, savehook_new_list.pop(idx))
+        self.textsource = texthook(pids, hwnd, pexe, gameuid)
+        self.textsource.start()
 
     def starttextsource(self, use=None, checked=True):
         self.translation_ui.showhidestate = False
         self.translation_ui.refreshtooliconsignal.emit()
+
+        for button in self.translation_ui.showbuttons:
+            button.show()
+        self.translation_ui.set_color_transparency()
         try:
             self.settin_ui.selectbutton.setEnabled(
                 globalconfig["sourcestatus2"]["texthook"]["use"]
@@ -546,16 +578,9 @@ class MAINUI:
 
     def fanyiinitmethod(self, classname):
         try:
-            if classname == "selfbuild":
-                if not os.path.exists("./userconfig/selfbuild.py"):
-                    return None
-                aclass = importlib.import_module("selfbuild").TS
-            else:
-                if not os.path.exists(
-                    "./LunaTranslator/translator/" + classname + ".py"
-                ):
-                    return None
-                aclass = importlib.import_module("translator." + classname).TS
+            if not os.path.exists("./LunaTranslator/translator/" + classname + ".py"):
+                return None
+            aclass = importlib.import_module("translator." + classname).TS
         except Exception as e:
             print_exc()
             self.textgetmethod(
@@ -635,7 +660,7 @@ class MAINUI:
 
     def createedittextui(self):
         try:
-            self.edittextui = edittext(self.settin_ui, self.edittextui_cached)
+            self.edittextui = edittext(self.commonstylebase, self.edittextui_cached)
             if self.edittextui:
                 self.edittextui.show()
         except:
@@ -652,109 +677,108 @@ class MAINUI:
     def createattachprocess(self):
         try:
             self.AttachProcessDialog = AttachProcessDialog(
-                self.settin_ui, self.selectprocess, self.hookselectdialog
+                self.commonstylebase, self.selectprocess, self.hookselectdialog
             )
             if self.AttachProcessDialog:
                 self.AttachProcessDialog.show()
         except:
             print_exc()
 
-    def onwindowloadautohook(self):
-        textsourceusing = globalconfig["sourcestatus2"]["texthook"]["use"]
-        if not (globalconfig["autostarthook"] and textsourceusing):
-            return
-        elif self.AttachProcessDialog and self.AttachProcessDialog.isVisible():
-            return
-        else:
-            try:
-                if self.textsource is None:
-                    hwnd = windows.GetForegroundWindow()
-                    pid = windows.GetWindowThreadProcessId(hwnd)
-                    name_ = getpidexe(pid)
-                    if name_ and name_ in savehook_new_list:
-                        lps = ListProcess(False)
-                        for pids, _exe in lps:
-                            if _exe == name_:
-
-                                # if any(map(testprivilege,pids)):
-                                self.textsource = None
-                                if globalconfig["sourcestatus2"]["texthook"]["use"]:
-                                    if globalconfig["startgamenototop"] == False:
-                                        idx = savehook_new_list.index(name_)
-                                        savehook_new_list.insert(
-                                            0, savehook_new_list.pop(idx)
-                                        )
-                                    needinserthookcode = savehook_new_data[name_][
-                                        "needinserthookcode"
-                                    ]
-                                    self.textsource = texthook(
-                                        pids,
-                                        hwnd,
-                                        name_,
-                                        autostarthookcode=savehook_new_data[name_][
-                                            "hook"
-                                        ],
-                                        needinserthookcode=needinserthookcode,
-                                    )
-
-                else:
-                    pids = self.textsource.pids
-                    if sum([int(pid_running(pid)) for pid in pids]) == 0:
-                        self.textsource = None
-                        self.translation_ui.thistimenotsetop = False
-                        if globalconfig["keepontop"]:
-                            self.translation_ui.settop()
-
-            except:
-
-                print_exc()
-
     def autohookmonitorthread(self):
+        def onwindowloadautohook():
+            textsourceusing = globalconfig["sourcestatus2"]["texthook"]["use"]
+            if not (globalconfig["autostarthook"] and textsourceusing):
+                return
+            elif self.AttachProcessDialog and self.AttachProcessDialog.isVisible():
+                return
+            if self.textsource is None:
+                hwnd = windows.GetForegroundWindow()
+                pid = windows.GetWindowThreadProcessId(hwnd)
+                name_ = getpidexe(pid)
+                if not name_:
+                    return
+                uid = findgameuidofpath(name_, savehook_new_list)
+                if not uid:
+                    return
+                lps = ListProcess(False)
+                for pids, _exe in lps:
+                    if _exe != name_:
+                        continue
+
+                    if self.textsource is not None:
+                        return
+                    if not globalconfig["sourcestatus2"]["texthook"]["use"]:
+                        return
+                    if globalconfig["startgamenototop"] == False:
+                        idx = savehook_new_list.index(uid)
+                        savehook_new_list.insert(0, savehook_new_list.pop(idx))
+                    needinserthookcode = savehook_new_data[uid]["needinserthookcode"]
+                    self.textsource = texthook(
+                        pids,
+                        hwnd,
+                        name_,
+                        uid,
+                        autostarthookcode=savehook_new_data[uid]["hook"],
+                        needinserthookcode=needinserthookcode,
+                    )
+                    self.textsource.start()
+
+            else:
+                pids = self.textsource.pids
+                if len(collect_running_pids(pids)) != 0:
+                    return
+                self.textsource = None
+                self.translation_ui.thistimenotsetop = False
+                if globalconfig["keepontop"]:
+                    self.translation_ui.settop()
+
         while self.isrunning:
-            self.onwindowloadautohook()
-            time.sleep(
-                0.5
-            )  # 太短了的话，中间存在一瞬间，后台进程比前台窗口内存占用要大。。。
+            try:
+                onwindowloadautohook()
+            except:
+                print_exc()
+            time.sleep(0.5)
+            # 太短了的话，中间存在一瞬间，后台进程比前台窗口内存占用要大。。。
 
     def autocheckhwndexists(self):
-        def setandrefresh(bool):
-            if self.translation_ui.isbindedwindow != bool:
-                self.translation_ui.isbindedwindow = bool
+        def setandrefresh(b):
+            if self.translation_ui.isbindedwindow != b:
+                self.translation_ui.isbindedwindow = b
                 self.translation_ui.refreshtooliconsignal.emit()
 
-        while self.isrunning:
-            if self.textsource:
-
-                hwnd = self.textsource.hwnd
-
-                if hwnd == 0:
-                    if globalconfig["sourcestatus2"]["texthook"]["use"]:
-                        fhwnd = windows.GetForegroundWindow()
-                        pids = self.textsource.pids
-                        if (
-                            hwnd == 0
-                            and windows.GetWindowThreadProcessId(fhwnd) in pids
-                        ):
-                            if "once" not in dir(self.textsource):
-                                self.textsource.once = True
-                                self.textsource.hwnd = fhwnd
-                                setandrefresh(True)
-                    else:
-                        setandrefresh(False)
-                else:
-                    if windows.GetWindowThreadProcessId(hwnd) == 0:
-                        self.textsource.hwnd = 0
-                        setandrefresh(False)
-                    elif "once" not in dir(self.textsource):
-                        self.textsource.once = True
-                        setandrefresh(True)
-                if len(self.textsource.pids):
-                    _mute = winsharedutils.GetProcessMute(self.textsource.pids[0])
-                    if self.translation_ui.processismuteed != _mute:
-                        self.translation_ui.processismuteed = _mute
-                        self.translation_ui.refreshtooliconsignal.emit()
-            else:
+        def __do():
+            if not self.textsource:
                 setandrefresh(False)
+                return
+            hwnd = self.textsource.hwnd
+
+            if hwnd == 0:
+                if not globalconfig["sourcestatus2"]["texthook"]["use"]:
+                    setandrefresh(False)
+                else:
+                    fhwnd = windows.GetForegroundWindow()
+                    pids = self.textsource.pids
+                    notdone = "once" not in dir(self.textsource)
+                    isgoodproc = windows.GetWindowThreadProcessId(fhwnd) in pids
+                    if isgoodproc and notdone:
+                        self.textsource.once = True
+                        self.textsource.hwnd = fhwnd
+                        setandrefresh(True)
+            else:
+                if windows.GetWindowThreadProcessId(hwnd) == 0:
+                    self.textsource.hwnd = 0
+                    setandrefresh(False)
+                elif "once" not in dir(self.textsource):
+                    self.textsource.once = True
+                    setandrefresh(True)
+            if len(self.textsource.pids):
+                _mute = winsharedutils.GetProcessMute(self.textsource.pids[0])
+                if self.translation_ui.processismuteed != _mute:
+                    self.translation_ui.processismuteed = _mute
+                    self.translation_ui.refreshtooliconsignal.emit()
+
+        while self.isrunning:
+            __do()
 
             time.sleep(0.5)
 
@@ -766,9 +790,10 @@ class MAINUI:
         )
 
     def createsavegamedb(self):
-        os.makedirs("userconfig", exist_ok=True)
         self.sqlsavegameinfo = sqlite3.connect(
-            "userconfig/savegame.db", check_same_thread=False, isolation_level=None
+            gobject.getuserconfigdir("savegame.db"),
+            check_same_thread=False,
+            isolation_level=None,
         )
         try:
             self.sqlsavegameinfo.execute(
@@ -831,21 +856,22 @@ class MAINUI:
         savehook_new_data[k].pop("imagepath")
         savehook_new_data[k].pop("imagepath_much2")
 
-    def querytraceplaytime_v4(self, k):
-        gameinternalid = self.get_gameinternalid(k)
+    def querytraceplaytime_v4(self, gameuid):
+        gameinternalid = self.get_gameinternalid(uid2gamepath[gameuid])
         return self.sqlsavegameinfo.execute(
             "SELECT timestart,timestop FROM traceplaytime_v4 WHERE gameinternalid = ?",
             (gameinternalid,),
         ).fetchall()
 
-    def get_gameinternalid(self, k):
+    def get_gameinternalid(self, gamepath):
         while True:
             ret = self.sqlsavegameinfo.execute(
-                "SELECT gameinternalid FROM gameinternalid WHERE gamepath = ?", (k,)
+                "SELECT gameinternalid FROM gameinternalid WHERE gamepath = ?",
+                (gamepath,),
             ).fetchone()
             if ret is None:
                 self.sqlsavegameinfo.execute(
-                    "INSERT INTO gameinternalid VALUES(NULL,?)", (k,)
+                    "INSERT INTO gameinternalid VALUES(NULL,?)", (gamepath,)
                 )
             else:
                 return ret[0]
@@ -857,9 +883,9 @@ class MAINUI:
             (to, _id),
         )
 
-    def traceplaytime(self, k, start, end, new):
+    def traceplaytime(self, gamepath, start, end, new):
 
-        gameinternalid = self.get_gameinternalid(k)
+        gameinternalid = self.get_gameinternalid(gamepath)
         if new:
             self.sqlsavegameinfo.execute(
                 "INSERT INTO traceplaytime_v4 VALUES(NULL,?,?,?)",
@@ -879,37 +905,48 @@ class MAINUI:
             time.sleep(1)
             _t = time.time()
 
-            def isok(name_):
-                savehook_new_data[name_]["statistic_playtime"] += _t - __t
-                if self.__currentexe == name_:
-                    self.traceplaytime(name_, self.__statistictime - 1, _t, False)
+            def isok(gameuid):
+                # 可能开着程序进行虚拟机暂停，导致一下子多了很多时间。不过测试vbox上应该没问题
+                maybevmpaused = (_t - __t) > 60
+                if not maybevmpaused:
+                    savehook_new_data[gameuid]["statistic_playtime"] += _t - __t
+                if (not maybevmpaused) and (self.__currentexe == name_):
+                    self.traceplaytime(
+                        uid2gamepath[gameuid], self.__statistictime - 1, _t, False
+                    )
 
                 else:
                     self.__statistictime = time.time()
                     self.__currentexe = name_
                     self.traceplaytime(
-                        name_, self.__statistictime - 1, self.__statistictime, True
+                        uid2gamepath[gameuid],
+                        self.__statistictime - 1,
+                        self.__statistictime,
+                        True,
                     )
 
+            _hwnd = windows.GetForegroundWindow()
+            _pid = windows.GetWindowThreadProcessId(_hwnd)
             try:
-                _hwnd = windows.GetForegroundWindow()
-                _pid = windows.GetWindowThreadProcessId(_hwnd)
-
+                if len(self.textsource.pids) == 0:
+                    raise Exception()
+                if _pid in self.textsource.pids or _pid == os.getpid():
+                    isok(self.textsource.gameuid)
+                else:
+                    self.__currentexe = None
+            except:
+                name_ = getpidexe(_pid)
+                if not name_:
+                    return
+                uids = findgameuidofpath(name_, findall=True)
                 try:
-                    if len(self.textsource.pids) == 0:
-                        raise Exception()
-                    if _pid in self.textsource.pids or _pid == os.getpid():
-                        isok(self.textsource.pname)
+                    if len(uids):
+                        for uid in uids:
+                            isok(uid)
                     else:
                         self.__currentexe = None
                 except:
-                    name_ = getpidexe(_pid)
-                    if name_ and name_ in savehook_new_list:
-                        isok(name_)
-                    else:
-                        self.__currentexe = None
-            except:
-                print_exc()
+                    print_exc()
 
     @threader
     def clickwordcallback(self, word, append):
@@ -955,7 +992,7 @@ class MAINUI:
 
     def inittray(self):
 
-        trayMenu = QMenu(self.settin_ui)
+        trayMenu = QMenu(self.commonstylebase)
         showAction = QAction(
             _TR("&显示"),
             trayMenu,
@@ -985,6 +1022,15 @@ class MAINUI:
         self.tray.activated.connect(self.translation_ui.leftclicktray)
         self.tray.show()
         self.tray.setContextMenu(trayMenu)
+
+    def showtraymessage(self, title, message):
+        self.tray.showMessage(_TR(title), _TR(message), QSystemTrayIcon.MessageIcon())
+
+    def showneedrestart(self, title, _):
+        if title in self.notifyonce:
+            return
+        self.notifyonce.add(title)
+        self.showtraymessage(title, "这一设置将会在下一次打开软件时生效")
 
     def destroytray(self):
         self.tray.hide()
@@ -1028,7 +1074,11 @@ class MAINUI:
             + (globalconfig["settingfonttype"])
             + "' ;  }"
         )
-        self.__commonstylebase.setStyleSheet(style)
+        style += f"""
+        QListWidget {{
+                font:{globalconfig["settingfontsize"] + 4}pt  {globalconfig["settingfonttype"]};  }}
+            """
+        self.commonstylebase.setStyleSheet(style)
 
     def loadui(self):
         self.installeventfillter()
@@ -1043,13 +1093,13 @@ class MAINUI:
         self.startxiaoxueguan()
         self.starthira()
         self.startoutputer()
-        self.__commonstylebase = commonstylebase(self.translation_ui)
+        self.commonstylebase = commonstylebase(self.translation_ui)
         self.setcommonstylesheet()
-        self.settin_ui = Setting(self.__commonstylebase)
-        self.transhis = transhist(self.settin_ui)
+        self.settin_ui = Setting(self.commonstylebase)
+        self.transhis = transhist(self.commonstylebase)
         self.startreader()
-        self.searchwordW = searchwordW(self.settin_ui)
-        self.hookselectdialog = hookselect(self.settin_ui)
+        self.searchwordW = searchwordW(self.commonstylebase)
+        self.hookselectdialog = hookselect(self.commonstylebase)
         self.starttextsource()
         threading.Thread(target=self.autocheckhwndexists).start()
         threading.Thread(target=self.autohookmonitorthread).start()
@@ -1067,7 +1117,7 @@ class MAINUI:
             # 会触发两次
             windows.WaitForSingleObject(sema, windows.INFINITE)
             if globalconfig["darklight2"] == 0:
-                self.__commonstylebase.setstylesheetsignal.emit()
+                self.commonstylebase.setstylesheetsignal.emit()
             windows.WaitForSingleObject(sema, windows.INFINITE)
 
     def installeventfillter(self):

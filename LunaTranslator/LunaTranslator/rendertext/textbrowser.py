@@ -1,5 +1,5 @@
 from qtsymbols import *
-from myutils.config import globalconfig
+from myutils.config import globalconfig, static_data
 from rendertext.somefunctions import dataget
 import gobject, functools, importlib
 from traceback import print_exc
@@ -58,9 +58,6 @@ class TextBrowser(QWidget, dataget):
         self.toplabel2.resize(event.size())
         self.masklabel.resize(event.size())
 
-    def setselectable(self, b):
-        self.masklabel.setHidden(b)
-
     def __init__(self, parent) -> None:
         super().__init__(parent)
         self.atback2 = QLabel(self)
@@ -108,9 +105,13 @@ class TextBrowser(QWidget, dataget):
 
     def resets1(self):
         self.currenttype = globalconfig["rendertext_using_internal"]["textbrowser"]
-        __ = importlib.import_module(
-            f"rendertext.textbrowser_imp.{self.currenttype}"
-        )
+        if self.currenttype not in static_data["textrender"]["textbrowser"]:
+            self.currenttype = static_data["textrender"]["textbrowser"][0]
+            globalconfig["rendertext_using_internal"]["textbrowser"] = static_data[
+                "textrender"
+            ]["textbrowser"][0]
+
+        __ = importlib.import_module(f"rendertext.textbrowser_imp.{self.currenttype}")
 
         self.currentclass = functools.partial(__.TextLine, self.currenttype)
 
@@ -411,108 +412,103 @@ class TextBrowser(QWidget, dataget):
                 tl2 = self.textbrowser.cursorRect(self.textcursor).bottomRight()
                 tl3 = self.textbrowser.cursorRect(self.textcursor).topLeft()
                 color = self._randomcolor(word)
-                if color:
-                    if word["orig"] not in ["\n", " ", ""]:
-                        if labeli >= len(self.searchmasklabels) - 1:
-                            ql = QLabel(self.atback2)
-                            ql.setMouseTracking(True)
-                            self.searchmasklabels.append(ql)
+                if len(word["orig"].strip()):
+                    if labeli >= len(self.searchmasklabels) - 1:
+                        ql = QLabel(self.atback2)
+                        ql.setMouseTracking(True)
+                        self.searchmasklabels.append(ql)
 
-                            ql = Qlabel_c(self.textbrowser)
-                            ql.setMouseTracking(True)
-                            ql.setStyleSheet("background-color: rgba(0,0,0,0.01);")
-                            self.searchmasklabels_clicked.append(ql)
+                        ql = Qlabel_c(self.textbrowser)
+                        ql.setMouseTracking(True)
+                        ql.setStyleSheet("background-color: rgba(0,0,0,0.01);")
+                        self.searchmasklabels_clicked.append(ql)
 
-                            ql = QLabel(self.atback2)
-                            ql.setMouseTracking(True)
-                            self.searchmasklabels.append(ql)
+                        ql = QLabel(self.atback2)
+                        ql.setMouseTracking(True)
+                        self.searchmasklabels.append(ql)
 
-                            ql = Qlabel_c(self.textbrowser)
-                            ql.setMouseTracking(True)
-                            ql.setStyleSheet("background-color: rgba(0,0,0,0.01);")
-                            self.searchmasklabels_clicked.append(ql)
-                        if tl1.y() != tl3.y():
-                            for __i in range(len(word["orig"])):
-                                self.textcursor.setPosition(pos + __i)
-                                self.textbrowser.setTextCursor(self.textcursor)
-                                _tl = self.textbrowser.cursorRect(
-                                    self.textcursor
-                                ).topLeft()
-                                if _tl.y() != tl1.y():
-                                    break
-                            self.textcursor.setPosition(pos + l)
+                        ql = Qlabel_c(self.textbrowser)
+                        ql.setMouseTracking(True)
+                        ql.setStyleSheet("background-color: rgba(0,0,0,0.01);")
+                        self.searchmasklabels_clicked.append(ql)
+                    if tl1.y() != tl3.y():
+                        for __i in range(len(word["orig"])):
+                            self.textcursor.setPosition(pos + __i)
                             self.textbrowser.setTextCursor(self.textcursor)
-                            __fm = self._getfh(False, getfm=True)
-                            w1 = int(__fm.size(0, word["orig"][:__i]).width())
-                            w2 = int(__fm.size(0, word["orig"][__i:]).width())
+                            _tl = self.textbrowser.cursorRect(self.textcursor).topLeft()
+                            if _tl.y() != tl1.y():
+                                break
+                        self.textcursor.setPosition(pos + l)
+                        self.textbrowser.setTextCursor(self.textcursor)
+                        __fm = self._getfh(False, getfm=True)
+                        w1 = int(__fm.size(0, word["orig"][:__i]).width())
+                        w2 = int(__fm.size(0, word["orig"][__i:]).width())
 
-                            pos1 = (
-                                tl1.x() + 1,
-                                tl1.y(),
-                                w1 - 2,
-                                int(heigth),
+                        pos1 = (
+                            tl1.x() + 1,
+                            tl1.y(),
+                            w1 - 2,
+                            int(heigth),
+                        )
+                        pos2 = tl3.x() + 1 - w2, tl3.y(), w2 - 2, int(heigth)
+
+                        if isfenciclick:
+                            self.searchmasklabels_clicked[labeli].setGeometry(*pos1)
+                            self.searchmasklabels_clicked[labeli].show()
+                            self.searchmasklabels_clicked[labeli].company = (
+                                self.searchmasklabels_clicked[labeli + 1]
                             )
-                            pos2 = tl3.x() + 1 - w2, tl3.y(), w2 - 2, int(heigth)
-
-                            if isfenciclick:
-                                self.searchmasklabels_clicked[labeli].setGeometry(*pos1)
-                                self.searchmasklabels_clicked[labeli].show()
-                                self.searchmasklabels_clicked[labeli].company = (
-                                    self.searchmasklabels_clicked[labeli + 1]
+                            if callback:
+                                self.searchmasklabels_clicked[labeli].callback = (
+                                    functools.partial(callback, (word))
                                 )
-                                if callback:
-                                    self.searchmasklabels_clicked[labeli].callback = (
-                                        functools.partial(callback, (word))
-                                    )
 
-                                self.searchmasklabels_clicked[labeli + 1].setGeometry(
-                                    *pos2
-                                )
-                                self.searchmasklabels_clicked[labeli + 1].show()
-                                self.searchmasklabels_clicked[labeli + 1].company = (
-                                    self.searchmasklabels_clicked[labeli]
-                                )
-                                if callback:
-                                    self.searchmasklabels_clicked[
-                                        labeli + 1
-                                    ].callback = functools.partial(callback, (word))
-
-                            if isshow_fenci:
-                                self.searchmasklabels[labeli].setGeometry(*pos1)
-                                self.searchmasklabels[labeli].setStyleSheet(
-                                    "background-color: {};".format(color)
-                                )
-                                self.searchmasklabels[labeli].show()
-
-                                self.searchmasklabels[labeli + 1].setGeometry(*pos2)
-                                self.searchmasklabels[labeli + 1].setStyleSheet(
-                                    "background-color: {};".format(color)
-                                )
-                                self.searchmasklabels[labeli + 1].show()
-                            labeli += 2
-                        else:
-
-                            pos1 = (
-                                tl1.x() + 1,
-                                tl1.y(),
-                                tl2.x() - tl1.x() - 2,
-                                int(heigth),
+                            self.searchmasklabels_clicked[labeli + 1].setGeometry(*pos2)
+                            self.searchmasklabels_clicked[labeli + 1].show()
+                            self.searchmasklabels_clicked[labeli + 1].company = (
+                                self.searchmasklabels_clicked[labeli]
                             )
-                            if isfenciclick:
-                                self.searchmasklabels_clicked[labeli].setGeometry(*pos1)
-                                self.searchmasklabels_clicked[labeli].company = None
-                                self.searchmasklabels_clicked[labeli].show()
-                                if callback:
-                                    self.searchmasklabels_clicked[labeli].callback = (
-                                        functools.partial(callback, word)
-                                    )
-                            if isshow_fenci:
-                                self.searchmasklabels[labeli].setGeometry(*pos1)
-                                self.searchmasklabels[labeli].setStyleSheet(
-                                    "background-color: {};".format(color)
+                            if callback:
+                                self.searchmasklabels_clicked[labeli + 1].callback = (
+                                    functools.partial(callback, (word))
                                 )
-                                self.searchmasklabels[labeli].show()
-                            labeli += 1
+
+                        if isshow_fenci and color:
+                            self.searchmasklabels[labeli].setGeometry(*pos1)
+                            self.searchmasklabels[labeli].setStyleSheet(
+                                "background-color: {};".format(color)
+                            )
+                            self.searchmasklabels[labeli].show()
+
+                            self.searchmasklabels[labeli + 1].setGeometry(*pos2)
+                            self.searchmasklabels[labeli + 1].setStyleSheet(
+                                "background-color: {};".format(color)
+                            )
+                            self.searchmasklabels[labeli + 1].show()
+                        labeli += 2
+                    else:
+
+                        pos1 = (
+                            tl1.x() + 1,
+                            tl1.y(),
+                            tl2.x() - tl1.x() - 2,
+                            int(heigth),
+                        )
+                        if isfenciclick:
+                            self.searchmasklabels_clicked[labeli].setGeometry(*pos1)
+                            self.searchmasklabels_clicked[labeli].company = None
+                            self.searchmasklabels_clicked[labeli].show()
+                            if callback:
+                                self.searchmasklabels_clicked[labeli].callback = (
+                                    functools.partial(callback, word)
+                                )
+                        if isshow_fenci and color:
+                            self.searchmasklabels[labeli].setGeometry(*pos1)
+                            self.searchmasklabels[labeli].setStyleSheet(
+                                "background-color: {};".format(color)
+                            )
+                            self.searchmasklabels[labeli].show()
+                        labeli += 1
 
                 tl1 = tl3
                 tl4 = tl2
@@ -522,17 +518,12 @@ class TextBrowser(QWidget, dataget):
     def _getfh(self, half, origin=True, getfm=False):
 
         font = QFont()
-        font.setBold(globalconfig["showbold"])
-        if origin:
-            font.setFamily(globalconfig["fonttype"])
-        else:
-            font.setFamily(globalconfig["fonttype2"])
-
-        # font.setPixelSize(int(globalconfig['fontsize'])  )
+        fm, fs, bold = self._getfontinfo(origin)
+        font.setBold(bold)
+        font.setFamily(fm)
         if half:
-            font.setPointSizeF((globalconfig["fontsize"]) * globalconfig["kanarate"])
-        else:
-            font.setPointSizeF((globalconfig["fontsize"]))
+            fs *= globalconfig["kanarate"]
+        font.setPointSizeF(fs)
         fm = QFontMetricsF(font)
         if getfm:
             return fm

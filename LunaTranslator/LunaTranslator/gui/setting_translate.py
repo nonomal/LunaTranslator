@@ -11,7 +11,8 @@ from gui.inputdialog import autoinitdialog, autoinitdialog_items
 from gui.usefulwidget import (
     D_getspinbox,
     getspinbox,
-    D_getcolorbutton,D_getIconButton,
+    D_getcolorbutton,
+    D_getIconButton,
     D_getsimpleswitch,
     selectcolor,
     makegrid,
@@ -37,14 +38,14 @@ def initsome11(self, l, label=None):
             continue
 
         _f = "./Lunatranslator/translator/{}.py".format(fanyi)
-        if fanyi != "selfbuild" and os.path.exists(_f) == False:
+        if not os.path.exists(_f):
             continue
         i += 1
 
         if fanyi in translatorsetting:
 
             items = autoinitdialog_items(translatorsetting[fanyi])
-            last = D_getIconButton( 
+            last = D_getIconButton(
                 callback=functools.partial(
                     autoinitdialog,
                     self,
@@ -52,17 +53,17 @@ def initsome11(self, l, label=None):
                     800,
                     items,
                 ),
-                icon="fa.gear", 
+                icon="fa.gear",
             )
         elif fanyi == "selfbuild":
-            last = D_getIconButton( 
+            last = D_getIconButton(
                 callback=lambda: selectdebugfile("./userconfig/selfbuild.py"),
-                icon="fa.gear", 
+                icon="fa.gear",
             )
         else:
             last = ""
         line += [
-            (globalconfig["fanyi"][fanyi]["name"], 6),
+            globalconfig["fanyi"][fanyi]["name"],
             D_getsimpleswitch(
                 globalconfig["fanyi"][fanyi],
                 "use",
@@ -127,12 +128,9 @@ def checkconnected(self):
         for dev in develop:
             if not globalconfig["fanyi"][dev]["use"]:
                 continue
-            if dev == "selfbuild":
-                if not os.path.exists("./userconfig/selfbuild.py"):
-                    continue
-            else:
-                if not os.path.exists("./LunaTranslator/translator/" + dev + ".py"):
-                    continue
+
+            if not os.path.exists("./LunaTranslator/translator/" + dev + ".py"):
+                continue
             needstart = True
             break
         try:
@@ -178,58 +176,55 @@ def setTabTwo_lazy(self, basel):
 
     grids = [
         [
-            ("最短翻译字数", 7),
-            (D_getspinbox(0, 9999, globalconfig, "minlength"), 3),
+            "最短翻译字数",
+            D_getspinbox(0, 9999, globalconfig, "minlength"),
             "",
-            ("最长翻译字数", 7),
-            (D_getspinbox(0, 9999, globalconfig, "maxlength"), 3),
+            "最长翻译字数",
+            D_getspinbox(0, 9999, globalconfig, "maxlength"),
             "",
-        ],
-        [
-            ("使用翻译缓存", 8),
-            (D_getsimpleswitch(globalconfig, "uselongtermcache")),
-            "",
-            "",
-            ("显示错误信息", 8),
-            (D_getsimpleswitch(globalconfig, "showtranexception"), 1),
-            "",
-            "",
-            ("翻译请求间隔(s)", 7),
-            (
-                D_getspinbox(
-                    0, 9999, globalconfig, "requestinterval", step=0.1, double=True
-                ),
-                3,
+            "翻译请求间隔(s)",
+            D_getspinbox(
+                0, 9999, globalconfig, "requestinterval", step=0.1, double=True
             ),
         ],
         [
-            ("均衡负载", 8),
-            (
-                D_getsimpleswitch(
-                    globalconfig,
-                    "loadbalance",
-                    callback=lambda x: self._fuzainum.setEnabled(x),
-                )
+            "使用翻译缓存",
+            D_getsimpleswitch(globalconfig, "uselongtermcache"),
+            "",
+            "均衡负载",
+            D_getsimpleswitch(
+                globalconfig,
+                "loadbalance",
+                callback=lambda x: self._fuzainum.setEnabled(x),
             ),
             "",
-            "",
-            ("单次负载个数", 7),
-            (functools.partial(createfuzspin, self), 3),
+            "单次负载个数",
+            functools.partial(createfuzspin, self),
         ],
     ]
     online_reg_grid = [[("若有多个api key，用|将每个key连接后填入，即可轮流使用", -1)]]
     pretransgrid = [
         [
-            ("预翻译采用模糊匹配", 6),
-            (D_getsimpleswitch(globalconfig, "premtsimiuse"), 1),
-            "",
-            "",
-            "",
-            ("模糊匹配_相似度_%", 6),
-            (D_getspinbox(0, 100, globalconfig, "premtsimi2"), 4),
-        ],
-        [
-            (functools.partial(createbtnexport, self), 12),
+            (
+                dict(
+                    type="grid",
+                    grid=(
+                        [
+                            "预翻译采用模糊匹配",
+                            D_getsimpleswitch(globalconfig, "premtsimiuse"),
+                            "",
+                            "模糊匹配_相似度_%",
+                            D_getspinbox(0, 100, globalconfig, "premtsimi2"),
+                            "",
+                        ],
+                        [
+                            (functools.partial(createbtnexport, self), 0),
+                        ],
+                    ),
+                ),
+                0,
+                "group",
+            )
         ],
         [],
     ]
@@ -247,19 +242,33 @@ def setTabTwo_lazy(self, basel):
 
     developgrid = [
         [
-            ("Chromium_路径", 8),
             (
-                D_getIconButton( 
-                    callback=functools.partial(
-                        autoinitdialog, self, "Chromium_路径", 800, _items
+                dict(
+                    title="Chromium_设置",
+                    type="grid",
+                    grid=(
+                        [
+                            "路径",
+                            D_getIconButton(
+                                callback=functools.partial(
+                                    autoinitdialog,
+                                    self,
+                                    "Chromium_路径",
+                                    800,
+                                    _items,
+                                ),
+                                icon="fa.gear",
+                            ),
+                            "",
+                            "端口号",
+                            D_getspinbox(0, 65535, globalconfig, "debugport"),
+                            "",
+                        ],
                     ),
-                    icon="fa.gear", 
-                )
-            ),
-        ],
-        [
-            ("端口号", 8),
-            (D_getspinbox(0, 65535, globalconfig, "debugport"), 4),
+                ),
+                0,
+                "group",
+            )
         ],
         [(functools.partial(createstatuslabel, self), 16)],
         [],

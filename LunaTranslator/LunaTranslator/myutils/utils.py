@@ -1,24 +1,20 @@
 import windows
 import os, time
-from traceback import print_exc
 import codecs, hashlib
-import os, time
-import socket, gobject
+import socket, gobject, uuid
 import ctypes, importlib
-import time
 import ctypes.wintypes
-import time
 from qtsymbols import *
 from traceback import print_exc
 from myutils.config import (
     globalconfig,
     static_data,
     getlanguse,
+    uid2gamepath,
     savehook_new_data,
-    _TR,
+    findgameuidofpath,
     getdefaultsavehook,
 )
-from ctypes import c_float, pointer, c_void_p
 import threading
 import re, heapq, winsharedutils
 from myutils.wrapper import tryprint
@@ -30,14 +26,15 @@ def __internal__getlang(k1, k2):
 
             if not gobject.baseobject.textsource:
                 break
-            if "pname" not in dir(gobject.baseobject.textsource):
+
+            gameuid = gobject.baseobject.textsource.gameuid
+            if not gameuid:
                 break
-            exepath = gobject.baseobject.textsource.pname
-            if savehook_new_data[exepath]["lang_follow_default"]:
+            if savehook_new_data[gameuid]["lang_follow_default"]:
                 break
 
             return static_data["language_list_translator_inner"][
-                savehook_new_data[exepath][k1]
+                savehook_new_data[gameuid][k1]
             ]
     except:
         pass
@@ -83,6 +80,19 @@ def simplehtmlparser(text, tag, sign):
     return inner
 
 
+def simplehtmlparser_all(text, tag, sign):
+    inners = []
+    while True:
+        idx = text.find(sign)
+        if idx == -1:
+            break
+        text = text[idx:]
+        inner = findenclose(text, tag)
+        inners.append(inner.replace("\n", ""))
+        text = text[len(inners) :]
+    return inners
+
+
 def nowisdark():
     dl = globalconfig["darklight2"]
     if dl == 1:
@@ -92,18 +102,6 @@ def nowisdark():
     elif dl == 0:
         dark = winsharedutils.isDark()
     return dark
-
-
-def getimageformatlist():
-    _ = [_.data().decode() for _ in QImageWriter.supportedImageFormats()]
-    if globalconfig["imageformat"] == -1 or globalconfig["imageformat"] >= len(_):
-        globalconfig["imageformat"] = _.index("png")
-    return _
-
-
-def getimageformat():
-
-    return getimageformatlist()[globalconfig["imageformat"]]
 
 
 class PriorityQueue:
@@ -125,19 +123,18 @@ class PriorityQueue:
         return bool(len(self._heap) == 0)
 
 
-searchvndbqueue = PriorityQueue()
-
-
-def guessmaybetitle(gamepath):
+def guessmaybetitle(gamepath, title):
 
     __t = []
 
     print(gamepath)
     for _ in [
-        savehook_new_data[gamepath]["title"],
+        title,
         os.path.basename(os.path.dirname(gamepath)),
         os.path.basename(gamepath)[:-4],
     ]:
+        if not _:
+            continue
         _ = _.replace("(同人ゲーム)", "").replace("(18禁ゲーム)", "")
         _ = re.sub(r"\[RJ(.*?)\]", "", _)
         _ = re.sub(r"\[\d{4}-?\d{2}\-?\d{2}\]", "", _)
@@ -156,135 +153,109 @@ def guessmaybetitle(gamepath):
         if (len(t) < 10) and (all(ord(c) < 128 for c in t)):
             continue
         lst.append(t)
+    print(lst)
     return lst
 
 
 targetmod = {}
 
 
-def trysearchforid(gamepath, searchargs: list):
+def dispatchsearchfordata(gameuid, target, vid):
+    targetmod[target].dispatchsearchfordata(gameuid, vid)
+
+
+def trysearchforid_1(gameuid, searchargs: list):
     infoid = None
     primitivtemetaorigin = globalconfig["primitivtemetaorigin"]
-    __ = list(targetmod.keys())
-    if primitivtemetaorigin not in __:
-        primitivtemetaorigin = __[0]
-    __.remove(primitivtemetaorigin)
-    __.insert(0, primitivtemetaorigin)
+    __ = [primitivtemetaorigin]
+    for k in targetmod:
+        if k == primitivtemetaorigin:
+            continue
+        if not globalconfig["metadata"][k]["auto"]:
+            continue
+        __.append(k)
 
     for key in __:
         vid = None
         for arg in searchargs:
-            vid = targetmod[key].getidbytitle(arg)
+            try:
+                vid = targetmod[key].getidbytitle(arg)
+            except:
+                print_exc()
+                continue
             if vid:
                 break
         if not vid:
             continue
         idname = globalconfig["metadata"][key]["target"]
-        savehook_new_data[gamepath][idname] = vid
+        savehook_new_data[gameuid][idname] = vid
         if infoid is None or key == primitivtemetaorigin:
             infoid = key, vid
             if key == primitivtemetaorigin:
                 break
     if infoid:
-        searchvndbqueue.put((1, gamepath, infoid))
-        return infoid
+        key, vid = infoid
+        dispatchsearchfordata(gameuid, key, vid)
+        gobject.baseobject.translation_ui.displayglobaltooltip.emit(
+            f"{key}: found {vid}"
+        )
 
 
-def trysearchfordata(gamepath, key, vid):
-    try:
-        data = targetmod[key].searchfordata(vid)
-    except:
-        print_exc()
-        return False
-    title = data.get("title", None)
-    namemap = data.get("namemap", None)
-    developers = data.get("developers", [])
-    webtags = data.get("webtags", [])
-    imagepath_all = data.get("imagepath_all", [])
-
-    for _ in imagepath_all:
-        if _ is None:
-            continue
-        if _ not in savehook_new_data[gamepath]["imagepath_all"]:
-            savehook_new_data[gamepath]["imagepath_all"].append(_)
-    if title:
-        if not savehook_new_data[gamepath]["istitlesetted"]:
-            savehook_new_data[gamepath]["title"] = title
-        _vis = globalconfig["metadata"][key]["name"]
-        _url = targetmod[key].refmainpage(vid)
-        _urls = [_[1] for _ in savehook_new_data[gamepath]["relationlinks"]]
-        if _url not in _urls:
-            savehook_new_data[gamepath]["relationlinks"].append(
-                (_vis, targetmod[key].refmainpage(vid))
-            )
-    if namemap:
-        savehook_new_data[gamepath]["namemap"] = namemap
-    if len(webtags):
-        savehook_new_data[gamepath]["webtags"] = webtags
-    if len(developers):
-        savehook_new_data[gamepath]["developers"] = developers
-    return True
+def trysearchforid(gameuid, searchargs: list):
+    threading.Thread(target=trysearchforid_1, args=(gameuid, searchargs)).start()
 
 
-def everymethodsthread():
-    while True:
-        _ = searchvndbqueue.get()
-        _type, gamepath, arg = _
-        try:
-            if _type == 0:
-                infoid = trysearchforid(gamepath, arg)
-                key, vid = infoid
-                gobject.baseobject.translation_ui.displayglobaltooltip.emit(
-                    f"{key}: found {vid}"
-                )
-
-            elif _type == 1:
-                key, vid = arg
-                if trysearchfordata(gamepath, key, vid):
-                    gobject.baseobject.translation_ui.displayglobaltooltip.emit(
-                        f"{key}: {vid} data loaded"
-                    )
-                else:
-                    gobject.baseobject.translation_ui.displayglobaltooltip.emit(
-                        f"{key}: {vid} load failed"
-                    )
-
-        except:
-            print_exc()
-
-
-def gamdidchangedtask(key, idname, gamepath):
-    vid = savehook_new_data[gamepath][idname]
+def idtypecheck(key, idname, gameuid, vid):
     if vid == "":
         return
+
+    try:
+        if globalconfig["metadata"][key].get("idtype", 1) == 0:
+            try:
+                vid = int(vid)
+            except:
+                print(vid)
+                return
+        savehook_new_data[gameuid][idname] = vid
+    except:
+        print_exc()
+
+
+def gamdidchangedtask(key, idname, gameuid):
+    vid = savehook_new_data[gameuid][idname]
+    dispatchsearchfordata(gameuid, key, vid)
+
+
+def titlechangedtask(gameuid, title):
+    savehook_new_data[gameuid]["title"] = title
+    savehook_new_data[gameuid]["istitlesetted"] = True
+    trysearchforid(gameuid, [title])
+
+
+def initanewitem(title):
+    uid = f"{time.time()}_{uuid.uuid4()}"
+    savehook_new_data[uid] = getdefaultsavehook(title)
+    return uid
+
+
+def find_or_create_uid(targetlist, gamepath, title=None):
+    uids = findgameuidofpath(gamepath, findall=True)
+    if len(uids) == 0:
+        uid = initanewitem(title)
+        if title is None:
+            savehook_new_data[uid]["title"] = (
+                os.path.basename(os.path.dirname(gamepath))
+                + "/"
+                + os.path.basename(gamepath)
+            )
+        uid2gamepath[uid] = gamepath
+        trysearchforid(uid, [title] + guessmaybetitle(gamepath, title))
+        return uid
     else:
-        try:
-            if globalconfig["metadata"][key]["idtype"] == 0:
-                try:
-                    vid = int(vid)
-                except:
-                    print(vid)
-                    return
-            savehook_new_data[gamepath][idname] = vid
-            searchvndbqueue.put((1, gamepath, (key, vid)), 1)
-        except:
-            print_exc()
-
-
-def titlechangedtask(gamepath, title):
-    savehook_new_data[gamepath]["title"] = title
-    savehook_new_data[gamepath]["istitlesetted"] = True
-    searchvndbqueue.put((0, gamepath, [title]), 1)
-
-
-def checkifnewgame(targetlist, gamepath, title=None):
-    isnew = gamepath not in targetlist
-    if isnew:
-        targetlist.insert(0, gamepath)
-    if gamepath not in savehook_new_data:
-        savehook_new_data[gamepath] = getdefaultsavehook(gamepath, title)
-        searchvndbqueue.put((0, gamepath, [title] + guessmaybetitle(gamepath)))
-    return isnew
+        for uid in uids:
+            if uid in targetlist:
+                return uid
+        return uids[0]
 
 
 kanjichs2ja = str.maketrans(static_data["kanjichs2ja"])
@@ -326,68 +297,6 @@ def argsort(l):
     ll = list(range(len(l)))
     ll.sort(key=lambda x: l[x])
     return ll
-
-
-class wavmp3player:
-    def __init__(self):
-        self.i = 0
-        self.lastfile = None
-        self.tasks = None
-        self.lock = threading.Lock()
-        self.lock.acquire()
-        threading.Thread(target=self.dotasks).start()
-
-    def mp3playfunction(self, binary, volume, force):
-        try:
-            self.tasks = (binary, volume, force)
-            self.lock.release()
-        except:
-            pass
-
-    def dotasks(self):
-        durationms = 0
-        try:
-            while True:
-                self.lock.acquire()
-                task = self.tasks
-                self.tasks = None
-                if task is None:
-                    continue
-                binary, volume, force = task
-                durationms = self._playsoundWin(binary, volume)
-
-                if durationms and globalconfig["ttsnointerrupt"]:
-                    while durationms > 0:
-                        durationms -= 100
-                        time.sleep(0.1)
-                        if self.tasks and self.tasks[-1]:
-                            break
-        except:
-            print_exc()
-
-    def _playsoundWin(self, binary, volume):
-        try:
-            duration = c_float()
-            device = c_void_p()
-            decoder = c_void_p()
-            succ = winsharedutils.PlayAudioInMem(
-                binary,
-                len(binary),
-                volume / 100,
-                pointer(decoder),
-                pointer(device),
-                pointer(duration),
-            )
-            if succ != 0:
-                return 0
-            if self.lastfile:
-                winsharedutils.PlayAudioInMem_Stop(self.lastfile[0], self.lastfile[1])
-            self.lastfile = decoder, device
-            durationms = duration.value * 1000
-        except:
-            durationms = 0
-
-        return durationms
 
 
 def selectdebugfile(path: str, ismypost=False):
@@ -433,7 +342,10 @@ class Process:
         pass
 """
                 )
-    os.startfile(p)
+    # os.startfile(p)
+    threading.Thread(
+        target=os.system, args=(f'notepad "{os.path.normpath(p)}"',)
+    ).start()
     return p
 
 
@@ -536,13 +448,7 @@ def minmaxmoveobservefunc(self):
                 return
 
             rect = windows.GetWindowRect(hwnd)
-            if event == windows.EVENT_SYSTEM_MINIMIZEEND:
-                if globalconfig["minifollow"]:
-                    self.hookfollowsignal.emit(3, (hwnd,))
-            elif event == windows.EVENT_SYSTEM_MINIMIZESTART:
-                if globalconfig["minifollow"]:
-                    self.hookfollowsignal.emit(4, (0, 0))
-            elif event == windows.EVENT_SYSTEM_MOVESIZESTART:  #
+            if event == windows.EVENT_SYSTEM_MOVESIZESTART:  #
                 self.lastpos = rect
             elif event == windows.EVENT_SYSTEM_MOVESIZEEND:  #
                 if globalconfig["movefollow"]:
@@ -563,7 +469,6 @@ def minmaxmoveobservefunc(self):
 
     eventpairs = (
         (windows.EVENT_SYSTEM_MOVESIZESTART, windows.EVENT_SYSTEM_MOVESIZEEND),
-        (windows.EVENT_SYSTEM_MINIMIZESTART, windows.EVENT_SYSTEM_MINIMIZEEND),
         (windows.EVENT_SYSTEM_FOREGROUND, windows.EVENT_SYSTEM_FOREGROUND),
     )
 
@@ -645,24 +550,11 @@ def checkpostusing(name):
     return use and checkpostlangmatch(name)
 
 
-def getpostfile(name):
-    if name == "myprocess":
-        mm = "myprocess"
-        checkpath = "./userconfig/myprocess.py"
-    else:
-        mm = "transoptimi." + name
-        checkpath = "./LunaTranslator/transoptimi/" + name + ".py"
+def loadpostsettingwindowmethod(name):
+    checkpath = "./LunaTranslator/transoptimi/" + name + ".py"
     if os.path.exists(checkpath) == False:
         return None
-    return mm
-
-
-def loadpostsettingwindowmethod(name):
-    if name == "myprocess":
-        return lambda _: selectdebugfile("./userconfig/myprocess.py")
-    mm = getpostfile(name)
-    if not mm:
-        return None
+    mm = "transoptimi." + name
 
     try:
         Process = importlib.import_module(mm).Process
@@ -760,7 +652,34 @@ class LRUCache:
 
 
 for k in globalconfig["metadata"]:
-    targetmod[k] = importlib.import_module(f"metadata.{k}").searcher(k)
+    try:
+        targetmod[k] = importlib.import_module(f"metadata.{k}").searcher(k)
+    except:
+        print_exc()
+
+globalcachedmodule = {}
 
 
-threading.Thread(target=everymethodsthread).start()
+def checkmd5reloadmodule(filename, module):
+    if not os.path.exists(filename):
+        # reload重新加载不存在的文件时不会报错。
+        return True, None
+    key = (filename, module)
+    md5 = getfilemd5(filename)
+    cachedmd5 = globalcachedmodule.get(key, {}).get("md5", None)
+    if md5 != cachedmd5:
+        try:
+            _ = importlib.import_module(module)
+            _ = importlib.reload(_)
+        except ModuleNotFoundError:
+            return True, None
+        # 不要捕获其他错误，缺少模块时直接跳过，只报实现错误
+        # except:
+        #     print_exc()
+        #     return True, None
+        globalcachedmodule[key] = {"md5": md5, "module": _}
+
+        return True, _
+    else:
+
+        return False, globalcachedmodule.get(key, {}).get("module", None)

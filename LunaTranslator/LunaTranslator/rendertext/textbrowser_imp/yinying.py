@@ -13,6 +13,7 @@ class QGraphicsDropShadowEffect_multi(QGraphicsDropShadowEffect):
 
 
 class TextLine(TextLabel_0):
+
     def usingcolor(self):
         return QColor(self.config["fillcolor"])
 
@@ -29,6 +30,6 @@ class TextLine(TextLabel_0):
         font = self.font()
         self.setShadow_internal(
             self.basecolor,
-            font.pointSizeF() * self.config["shadowR"],
+            font.pointSizeF() * self.config["shadowR"] + self.config["shadowR_ex"],
             self.config["shadowforce"],
         )

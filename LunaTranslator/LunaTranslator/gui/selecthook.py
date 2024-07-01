@@ -11,8 +11,8 @@ from gui.usefulwidget import (
     getQMessageBox,
     dialog_showinfo,
     getsimplecombobox,
+    MySwitch,
     getsimpleswitch,
-    textbrowappendandmovetoend,
     FocusSpin,
     FocusCombo,
 )
@@ -73,8 +73,7 @@ class QButtonGroup_switch_widegt(QWidget):
 
 
 def listprocessm():
-    os.makedirs("cache/temp", exist_ok=True)
-    cachefname = os.path.abspath("cache/temp/{}.txt".format(time.time()))
+    cachefname = gobject.gettempdir("{}.txt".format(time.time()))
     arch = "64" if gobject.baseobject.textsource.is64bit else "32"
     exe = os.path.abspath("./files/plugins/shareddllproxy{}.exe".format(arch))
     pid = " ".join([str(_) for _ in gobject.baseobject.textsource.pids])
@@ -126,7 +125,7 @@ class searchhookparam(QDialog):
         elif idx == 1:  # 0默认
             # usestruct.codepage=self.codepage.value()
             usestruct.codepage = static_data["codepage_real"][self.codepagesave["spcp"]]
-            usestruct.text = self.searchtext.text()
+            usestruct.text = self.searchtext.text()[:30]
             if len(usestruct.text) < 4:
                 getQMessageBox(self, "警告", "搜索文本过短！", True)
                 return
@@ -210,7 +209,7 @@ class searchhookparam(QDialog):
         layout1 = QHBoxLayout()
         layout1.addWidget(QLabel(_TR("代码页")))
         self.codepagesave = {
-            "spcp": savehook_new_data[gobject.baseobject.textsource.pname].get(
+            "spcp": savehook_new_data[gobject.baseobject.textsource.gameuid].get(
                 "codepage_index", globalconfig["codepage_index"]
             )
         }
@@ -367,7 +366,7 @@ class hookselect(closeashidewindow):
     addnewhooksignal = pyqtSignal(tuple, bool)
     getnewsentencesignal = pyqtSignal(str)
     sysmessagesignal = pyqtSignal(str)
-    changeprocessclearsignal = pyqtSignal()
+    changeprocessclearsignal = pyqtSignal(dict)
     removehooksignal = pyqtSignal(tuple)
     getfoundhooksignal = pyqtSignal(dict)
     update_item_new_line = pyqtSignal(tuple, str)
@@ -375,6 +374,8 @@ class hookselect(closeashidewindow):
     def __init__(self, parent):
         super(hookselect, self).__init__(parent, globalconfig["selecthookgeo"])
         self.setupUi()
+        self.save = []
+        self.hidesearchhookbuttons()
         self.changeprocessclearsignal.connect(self.changeprocessclear)
         self.removehooksignal.connect(self.removehook)
         self.addnewhooksignal.connect(self.addnewhook)
@@ -389,7 +390,7 @@ class hookselect(closeashidewindow):
             return
         row = self.save.index(hook)
         output = output[:200].replace("\n", " ")
-        colidx = 2 + (gobject.baseobject.textsource.allow_set_text_name)
+        colidx = 2 + int(self.allow_set_text_name) + int(bool(self.embedablenum))
         self.ttCombomodelmodel.item(row, colidx).setText(output)
 
     def removehook(self, key):
@@ -398,8 +399,35 @@ class hookselect(closeashidewindow):
         self.ttCombomodelmodel.removeRow(self.save.index(key))
         self.selectionbutton.pop(self.save.index(key))
         self.save.remove(key)
+        self.solveifembedablenumdecreaseto0(key)
 
-    def changeprocessclear(self):
+    def solveifembedablenumdecreaseto0(self, key):
+        embedable = self.saveifembedable.pop(key)
+        if not embedable:
+            return
+        self.embedablenum -= 1
+        if self.embedablenum > 0:
+            return
+        self.currentheader.pop(1 + int(self.allow_set_text_name))
+        self.ttCombomodelmodel.removeColumn(1 + int(self.allow_set_text_name))
+        self.ttCombomodelmodel.setHorizontalHeaderLabels(_TRL(self.currentheader))
+
+    def solveifembedablenumincreaseto1(self, key, isembedable):
+        self.saveifembedable[key] = isembedable
+        if not isembedable:
+            return
+        self.embedablenum += 1
+        if self.embedablenum != 1:
+            return
+
+        self.currentheader.insert(1 + int(self.allow_set_text_name), "内嵌")
+        self.ttCombomodelmodel.insertColumn(1 + int(self.allow_set_text_name), [])
+        self.ttCombomodelmodel.setHorizontalHeaderLabels(_TRL(self.currentheader))
+        self.tttable.horizontalHeader().setSectionResizeMode(
+            1 + int(self.allow_set_text_name), QHeaderView.ResizeMode.ResizeToContents
+        )
+
+    def changeprocessclear(self, config):
         # self.ttCombo.clear()
         self.ttCombomodelmodel.clear()
         self.save = []
@@ -409,45 +437,35 @@ class hookselect(closeashidewindow):
         self.typecombo = []
         self.allres = OrderedDict()
         self.hidesearchhookbuttons()
+        self.currentheader = ["显示", "HOOK", "文本"]
+        self.allow_set_text_name = config["allow_set_text_name"]
+        self.saveifembedable = {}
+        if self.allow_set_text_name:
+            self.currentheader.insert(1, "类型")
+        self.embedablenum = 0
 
     def addnewhook(self, key, select):
         hc, hn, tp = key
+        isembedable = hc[0] == "E"
+
         if len(self.save) == 0:
-            if gobject.baseobject.textsource.allow_set_text_name:
-                self.ttCombomodelmodel.setHorizontalHeaderLabels(
-                    _TRL(["显示", "类型", "HOOK", "文本"])
-                )
+            self.ttCombomodelmodel.setHorizontalHeaderLabels(_TRL(self.currentheader))
+            self.tttable.horizontalHeader().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.ResizeToContents
+            )
+            self.tttable.horizontalHeader().setSectionResizeMode(
+                len(self.currentheader) - 1, QHeaderView.ResizeMode.Interactive
+            )
+            self.tttable.horizontalHeader().setSectionResizeMode(
+                len(self.currentheader) - 2, QHeaderView.ResizeMode.Interactive
+            )
+            if self.allow_set_text_name:
 
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    2, QHeaderView.ResizeMode.Interactive
-                )
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    3, QHeaderView.ResizeMode.Interactive
-                )
-
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    0, QHeaderView.ResizeMode.ResizeToContents
-                )
                 self.tttable.horizontalHeader().setSectionResizeMode(
                     1, QHeaderView.ResizeMode.ResizeToContents
                 )
-            else:
-                self.ttCombomodelmodel.setHorizontalHeaderLabels(
-                    _TRL(["选择", "HOOK", "文本"])
-                )
-
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    1, QHeaderView.ResizeMode.Interactive
-                )
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    2, QHeaderView.ResizeMode.Interactive
-                )
-
-                self.tttable.horizontalHeader().setSectionResizeMode(
-                    0, QHeaderView.ResizeMode.ResizeToContents
-                )
-
-        if hc[0] == "E":
+        self.solveifembedablenumincreaseto1(key, isembedable)
+        if isembedable:
             self.selectionbutton.insert(
                 0,
                 getsimpleswitch(
@@ -464,111 +482,91 @@ class hookselect(closeashidewindow):
                     {1: False}, 1, callback=functools.partial(self.accept, key)
                 )
             )
-        if gobject.baseobject.textsource.allow_set_text_name:
-
-            self.typecombo.insert(
-                rown,
-                getsimplecombobox(
-                    _TRL(["文本", "人名"]),
-                    gobject.baseobject.textsource.hooktypecollecter,
-                    key,
-                    callback=functools.partial(
-                        savehook_new_data[gobject.baseobject.textsource.pname][
-                            "hooktypeasname"
-                        ].__setitem__,
-                        json.dumps(gobject.baseobject.textsource.serialkey(key)),
-                    ),
-                ),
-            )
-            self.ttCombomodelmodel.insertRow(
-                rown,
-                [
-                    QStandardItem(),
-                    QStandardItem(),
-                    QStandardItem("%s %s %x:%x" % (hn, hc, tp.ctx, tp.ctx2)),
-                    QStandardItem(),
-                ],
-            )
-            self.tttable.setIndexWidget(
-                self.ttCombomodelmodel.index(rown, 1), self.typecombo[rown]
-            )
-        else:
-            self.ttCombomodelmodel.insertRow(
-                rown,
-                [
-                    QStandardItem(),
-                    QStandardItem("%s %s %x:%x" % (hn, hc, tp.ctx, tp.ctx2)),
-                    QStandardItem(),
-                ],
-            )
+        items = [
+            QStandardItem(),
+            QStandardItem("%s %s %x:%x" % (hn, hc, tp.ctx, tp.ctx2)),
+            QStandardItem(),
+        ]
+        if self.allow_set_text_name:
+            items.insert(1, QStandardItem())
+        if self.embedablenum:
+            items.insert(1 + int(self.allow_set_text_name), QStandardItem())
+        self.ttCombomodelmodel.insertRow(rown, items)
 
         if select:
             self.selectionbutton[rown].click()
         self.tttable.setIndexWidget(
             self.ttCombomodelmodel.index(rown, 0), self.selectionbutton[rown]
         )
-        if hc[0] == "E":
-            embedw, hlay = getformlayoutw(cls=QHBoxLayout)
-            label = QLabel()
-            hlay.addWidget(label)
-            embedw.setStyleSheet("background-color: rgba(255, 255, 255, 0)")
-            checkbtn = QPushButton()
-            checkbtn.setSizePolicy(
-                QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
-            )
+        if isembedable:
+            checkbtn = MySwitch(sign=self._check_tp_using(key))
 
-            def _t(tp):
-                _isusing = gobject.baseobject.textsource.checkisusingembed(
-                    tp.addr, tp.ctx, tp.ctx2
-                )
-                if _isusing:
-                    _text = "取消内嵌翻译"
+            checkbtn.clicked.connect(functools.partial(self._embedbtnfn, key))
 
-                    if hn[:8] == "UserHook":
-                        needinserthookcode = savehook_new_data[
-                            gobject.baseobject.textsource.pname
-                        ]["needinserthookcode"]
-                        needinserthookcode = list(set(needinserthookcode + [hc]))
-                        savehook_new_data[gobject.baseobject.textsource.pname].update(
-                            {"needinserthookcode": needinserthookcode}
-                        )
-                    else:
-                        pass
-                else:
-                    _text = "使用内嵌翻译"
-                checkbtn.setText("【" + _TR(_text) + "】")
-                return _isusing
-
-            _t(tp)
-
-            def _c(hc, tp, _):
-                gobject.baseobject.textsource.useembed(
-                    tp.addr, tp.ctx, tp.ctx2, not _t(tp)
-                )
-                _use = _t(tp)
-                if _use:
-                    savehook_new_data[gobject.baseobject.textsource.pname][
-                        "embedablehook"
-                    ].append([hc, tp.addr, tp.ctx, tp.ctx2])
-                else:
-                    save = []
-                    for _ in savehook_new_data[gobject.baseobject.textsource.pname][
-                        "embedablehook"
-                    ]:
-                        hc, ad, c1, c2 = _
-                        if (hc, 0, c1, c2) == (hc, 0, tp.ctx, tp.ctx2):
-                            save.append(_)
-                    for _ in save:
-                        savehook_new_data[gobject.baseobject.textsource.pname][
-                            "embedablehook"
-                        ].remove(_)
-
-            checkbtn.clicked.connect(functools.partial(_c, hc, tp))
-            hlay.addWidget(checkbtn)
-            colidx = 2 + (gobject.baseobject.textsource.allow_set_text_name)
             self.tttable.setIndexWidget(
-                self.ttCombomodelmodel.index(rown, colidx), embedw
+                self.ttCombomodelmodel.index(rown, 1 + int(self.allow_set_text_name)),
+                checkbtn,
             )
+        if self.allow_set_text_name:
+            typecombo = getsimplecombobox(
+                _TRL(["文本", "人名"]),
+                gobject.baseobject.textsource.hooktypecollecter,
+                key,
+                callback=functools.partial(
+                    savehook_new_data[gobject.baseobject.textsource.gameuid][
+                        "hooktypeasname"
+                    ].__setitem__,
+                    json.dumps(gobject.baseobject.textsource.serialkey(key)),
+                ),
+            )
+            self.typecombo.insert(rown, typecombo)
+            self.tttable.setIndexWidget(
+                self.ttCombomodelmodel.index(rown, 1),
+                typecombo,
+            )
+            self.tttable.setRowHeight(
+                rown, max(self.tttable.rowHeight(rown), typecombo.height())
+            )
+
+    def _check_tp_using(self, key):
+        hc, hn, tp = key
+        _isusing = gobject.baseobject.textsource.checkisusingembed(
+            tp.addr, tp.ctx, tp.ctx2
+        )
+        if _isusing:
+
+            if hn[:8] == "UserHook":
+                needinserthookcode = savehook_new_data[
+                    gobject.baseobject.textsource.gameuid
+                ]["needinserthookcode"]
+                needinserthookcode = list(set(needinserthookcode + [hc]))
+                savehook_new_data[gobject.baseobject.textsource.gameuid].update(
+                    {"needinserthookcode": needinserthookcode}
+                )
+            else:
+                pass
+        return _isusing
+
+    def _embedbtnfn(self, key, _):
+        hc, hn, tp = key
+        gobject.baseobject.textsource.useembed(tp.addr, tp.ctx, tp.ctx2, _)
+        _use = self._check_tp_using(key)
+        if _use:
+            savehook_new_data[gobject.baseobject.textsource.gameuid][
+                "embedablehook"
+            ].append([hc, tp.addr, tp.ctx, tp.ctx2])
+        else:
+            save = []
+            for _ in savehook_new_data[gobject.baseobject.textsource.gameuid][
+                "embedablehook"
+            ]:
+                hc, ad, c1, c2 = _
+                if (hc, 0, c1, c2) == (hc, 0, tp.ctx, tp.ctx2):
+                    save.append(_)
+            for _ in save:
+                savehook_new_data[gobject.baseobject.textsource.gameuid][
+                    "embedablehook"
+                ].remove(_)
 
     def setupUi(self):
         self.widget = QWidget()
@@ -684,8 +682,6 @@ class hookselect(closeashidewindow):
         self.tabwidget.addTab(self.textOutput, _TR("文本"))
         self.tabwidget.addTab(self.sysOutput, _TR("系统"))
 
-        self.changeprocessclear()
-
     def showmenu(self, p: QPoint):
         r = self.tttable.currentIndex().row()
         if r < 0:
@@ -714,7 +710,7 @@ class hookselect(closeashidewindow):
 
     def opengamesetting(self):
         try:
-            dialog_setting_game(self, gobject.baseobject.textsource.pname, True)
+            dialog_setting_game(self, gobject.baseobject.textsource.gameuid, True)
         except:
             print_exc()
 
@@ -869,16 +865,16 @@ class hookselect(closeashidewindow):
 
                 if hn[:8] == "UserHook":
                     needinserthookcode = savehook_new_data[
-                        gobject.baseobject.textsource.pname
+                        gobject.baseobject.textsource.gameuid
                     ]["needinserthookcode"]
                     needinserthookcode = list(set(needinserthookcode + [hc]))
-                    savehook_new_data[gobject.baseobject.textsource.pname].update(
+                    savehook_new_data[gobject.baseobject.textsource.gameuid].update(
                         {"needinserthookcode": needinserthookcode}
                     )
             else:
                 pass
 
-            savehook_new_data[gobject.baseobject.textsource.pname].update(
+            savehook_new_data[gobject.baseobject.textsource.gameuid].update(
                 {"hook": gobject.baseobject.textsource.serialselectedhook()}
             )
         except:
@@ -894,15 +890,32 @@ class hookselect(closeashidewindow):
         except:
             print_exc()
 
+    def textbrowappendandmovetoend(self, textOutput, sentence, addspace=True):
+        scrollbar = textOutput.verticalScrollBar()
+        atBottom = (
+            scrollbar.value() + 3 > scrollbar.maximum()
+            or scrollbar.value() / scrollbar.maximum() > 0.975
+        )
+        cursor = QTextCursor(textOutput.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(
+            (("" if textOutput.document().isEmpty() else "\n") if addspace else "")
+            + sentence
+        )
+        if atBottom:
+            scrollbar.setValue(scrollbar.maximum())
+
     def sysmessage(self, sentence):
 
-        textbrowappendandmovetoend(self.sysOutput, get_time_stamp() + " " + sentence)
+        self.textbrowappendandmovetoend(
+            self.sysOutput, get_time_stamp() + " " + sentence
+        )
 
     def getnewsentence(self, sentence):
         if self.at1 == 2:
             return
 
-        textbrowappendandmovetoend(self.textOutput, sentence)
+        self.textbrowappendandmovetoend(self.textOutput, sentence)
 
     def ViewThread2(self, index: QModelIndex):
         self.tabwidget.setCurrentIndex(0)

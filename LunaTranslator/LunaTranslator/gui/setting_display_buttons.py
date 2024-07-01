@@ -14,7 +14,7 @@ from gui.usefulwidget import (
 
 @Singleton
 class dialog_selecticon(QDialog):
-    def __init__(self, parent, dict, key, _nouse_for_click_arg) -> None:
+    def __init__(self, parent, dict, key) -> None:
 
         super().__init__(parent, Qt.WindowType.WindowCloseButtonHint)
         self.dict = dict
@@ -29,7 +29,7 @@ class dialog_selecticon(QDialog):
         self.setLayout(layout)
         for i, name in enumerate(js):
             layout.addWidget(
-                getIconButton( 
+                getIconButton(
                     functools.partial(self.selectcallback, "fa." + name),
                     qicon=qtawesome.icon(
                         "fa." + name, color=globalconfig["buttoncolor"]
@@ -47,8 +47,8 @@ class dialog_selecticon(QDialog):
 
 
 def doadjust(_):
-    gobject.baseobject.translation_ui.enterfunction(delay=3)
     gobject.baseobject.translation_ui.adjustbuttons()
+    gobject.baseobject.translation_ui.enterfunction()
 
 
 def changerank(item, up, sortlist, savelist, savelay):

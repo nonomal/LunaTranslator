@@ -25,6 +25,11 @@ curlFileName64 = "curl-8.7.1_7-win64-mingw.zip"
 ocrModelUrl = "https://github.com/HIllya51/RESOURCES/releases/download/ocr_models"
 availableLocales = ["cht", "en", "ja", "ko", "ru", "zh"]
 
+LunaHook_latest = (
+    "https://github.com/HIllya51/LunaHook/releases/latest/download/Release_English.zip"
+)
+
+LocaleRe = "https://github.com/InWILL/Locale_Remulator/releases/download/v1.5.3-beta.1/Locale_Remulator.1.5.3-beta.1.zip"
 
 # rootDir = os.path.dirname(os.path.abspath(__file__))
 # print(__file__)
@@ -72,24 +77,20 @@ def downloadBrotli():
 
 def downloadlr():
 
-    for ass in get_url_as_json(
-        "https://api.github.com/repos/InWILL/Locale_Remulator/releases/latest"
-    )["assets"]:
-        if "browser_download_url" in ass:
-            os.chdir(rootDir + "\\temp")
-            subprocess.run(f"curl -LO {ass['browser_download_url']}")
-            subprocess.run(f"7z x {ass['name']} -oLR")
-            os.makedirs(
-                f"{rootDir}/LunaTranslator/files/plugins/Locale_Remulator",
-                exist_ok=True,
-            )
-            for _dir, _, _fs in os.walk("LR"):
-                for f in _fs:
-                    if f in ["LRHookx64.dll", "LRHookx32.dll"]:
-                        shutil.move(
-                            os.path.join(_dir, f),
-                            f"{rootDir}/LunaTranslator/files/plugins/Locale_Remulator",
-                        )
+    os.chdir(rootDir + "\\temp")
+    subprocess.run(f"curl -LO {LocaleRe}")
+    subprocess.run(f"7z x {LocaleRe.split('/')[-1]} -oLR")
+    os.makedirs(
+        f"{rootDir}/LunaTranslator/files/plugins/Locale_Remulator",
+        exist_ok=True,
+    )
+    for _dir, _, _fs in os.walk("LR"):
+        for f in _fs:
+            if f in ["LRHookx64.dll", "LRHookx32.dll"]:
+                shutil.move(
+                    os.path.join(_dir, f),
+                    f"{rootDir}/LunaTranslator/files/plugins/Locale_Remulator",
+                )
 
 
 def move_directory_contents(source_dir, destination_dir):
@@ -197,29 +198,26 @@ def get_url_as_json(url):
 
 
 def buildLunaHook():
-    for ass in get_url_as_json(
-        "https://api.github.com/repos/HIllya51/LunaHook/releases/latest"
-    )["assets"]:
-        if ass["name"] == "Release_English.zip":
-            os.chdir(rootDir + "\\temp")
-            subprocess.run(f"curl -LO {ass['browser_download_url']}")
-            subprocess.run(f"7z x Release_English.zip")
-            shutil.move(
-                "Release_English/LunaHook32.dll",
-                f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
-            )
-            shutil.move(
-                "Release_English/LunaHost32.dll",
-                f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
-            )
-            shutil.move(
-                "Release_English/LunaHook64.dll",
-                f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
-            )
-            shutil.move(
-                "Release_English/LunaHost64.dll",
-                f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
-            )
+
+    os.chdir(rootDir + "\\temp")
+    subprocess.run(f"curl -LO {LunaHook_latest}")
+    subprocess.run(f"7z x {LunaHook_latest.split('/')[-1]}")
+    shutil.move(
+        "Release_English/LunaHook32.dll",
+        f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
+    )
+    shutil.move(
+        "Release_English/LunaHost32.dll",
+        f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
+    )
+    shutil.move(
+        "Release_English/LunaHook64.dll",
+        f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
+    )
+    shutil.move(
+        "Release_English/LunaHost64.dll",
+        f"{rootDir}/LunaTranslator/files/plugins/LunaHook",
+    )
 
 
 def buildPlugins():
@@ -258,7 +256,7 @@ if __name__ == "__main__":
             print("version=" + versionstring)
             exit()
     arch = sys.argv[1]
-    isdebug = len(sys.argv) > 2 and int(sys.argv[2])
+    version = sys.argv[2]
     os.chdir(rootDir)
     os.system("git submodule update --init --recursive")
     os.makedirs("temp", exist_ok=True)
@@ -279,13 +277,16 @@ if __name__ == "__main__":
     os.chdir(rootDir)
 
     if arch == "x86":
-        py37Path = "C:\\hostedtoolcache\\windows\\Python\\3.7.9\\x86\\python.exe"
+        py37Path = f"C:\\hostedtoolcache\\windows\\Python\\{version}\\x86\\python.exe"
     else:
-        py37Path = "C:\\hostedtoolcache\\windows\\Python\\3.7.9\\x64\\python.exe"
+        py37Path = f"C:\\hostedtoolcache\\windows\\Python\\{version}\\x64\\python.exe"
 
     os.chdir(rootDir + "\\LunaTranslator")
 
     subprocess.run(f"{py37Path} -m pip install --upgrade pip")
     subprocess.run(f"{py37Path} -m pip install -r requirements.txt")
-
-    subprocess.run(f'{py37Path} retrieval.py {int(arch == "x86")}')
+    # 3.8之后会莫名其妙引用这个b东西，然后这个b东西会把一堆没用的东西导入进来
+    shutil.rmtree(os.path.join(os.path.dirname(py37Path), "Lib\\test"))
+    shutil.rmtree(os.path.join(os.path.dirname(py37Path), "Lib\\unittest"))
+    # 放弃，3.8需要安装KB2533623才能运行，3.7用不着。
+    subprocess.run(f"{py37Path} retrieval.py")

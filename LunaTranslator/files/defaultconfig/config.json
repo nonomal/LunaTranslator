@@ -11,6 +11,7 @@
     "WindowBackdrop": 0,
     "WindowEffect": 0,
     "read_raw": true,
+    "global_list_opened": true,
     "read_trans": false,
     "read_translator": 0,
     "disappear_delay": 5,
@@ -33,7 +34,8 @@
                 "args": {
                     "fillcolor": "#eeeeee",
                     "shadowforce": 5,
-                    "shadowR": 0.4
+                    "shadowR": 0.1,
+                    "shadowR_ex": 3
                 },
                 "argstype": {
                     "fillcolor": {
@@ -48,10 +50,17 @@
                         "step": 1
                     },
                     "shadowR": {
-                        "name": "阴影半径_倍率",
+                        "name": "阴影半径_字体倍率",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
                         "max": 10,
+                        "step": 0.01
+                    },
+                    "shadowR_ex": {
+                        "name": "阴影半径_固定值",
+                        "type": "spin",
+                        "min": 0,
+                        "max": 100,
                         "step": 0.1
                     }
                 }
@@ -70,7 +79,7 @@
                     "width": {
                         "name": "描边宽度",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
                         "max": 100,
                         "step": 0.1
                     }
@@ -80,37 +89,38 @@
                 "name": "描边字体_2",
                 "args": {
                     "fillcolor": "#eeeeee",
-                    "width": 3
+                    "width_rate": 0.1,
+                    "width": 3,
+                    "trace": 0,
+                    "reverse": true
                 },
                 "argstype": {
+                    "reverse": {
+                        "name": "反转颜色",
+                        "type": "switch"
+                    },
                     "fillcolor": {
                         "name": "填充颜色",
                         "type": "colorselect"
                     },
                     "width": {
-                        "name": "描边宽度",
+                        "name": "描边宽度_固定值",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
                         "max": 100,
                         "step": 0.1
-                    }
-                }
-            },
-            "miaobian2": {
-                "name": "描边字体_3",
-                "args": {
-                    "fillcolor": "#eeeeee",
-                    "width": 3
-                },
-                "argstype": {
-                    "fillcolor": {
-                        "name": "填充颜色",
-                        "type": "colorselect"
                     },
-                    "width": {
-                        "name": "描边宽度",
+                    "width_rate": {
+                        "name": "描边宽度_字体倍率",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
+                        "max": 10,
+                        "step": 0.01
+                    },
+                    "trace": {
+                        "name": "投影距离",
+                        "type": "spin",
+                        "min": 0,
                         "max": 100,
                         "step": 0.1
                     }
@@ -145,37 +155,38 @@
                 "name": "描边字体_2",
                 "args": {
                     "fillcolor": "#eeeeee",
-                    "width": 3
+                    "width_rate": 0.1,
+                    "width": 3,
+                    "trace": 0,
+                    "reverse": true
                 },
                 "argstype": {
+                    "reverse": {
+                        "name": "反转颜色",
+                        "type": "switch"
+                    },
                     "fillcolor": {
                         "name": "填充颜色",
                         "type": "colorselect"
                     },
                     "width": {
-                        "name": "描边宽度",
+                        "name": "描边宽度_固定值",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
                         "max": 100,
                         "step": 0.1
-                    }
-                }
-            },
-            "miaobian2": {
-                "name": "描边字体_3",
-                "args": {
-                    "fillcolor": "#eeeeee",
-                    "width": 3
-                },
-                "argstype": {
-                    "fillcolor": {
-                        "name": "填充颜色",
-                        "type": "colorselect"
                     },
-                    "width": {
-                        "name": "描边宽度",
+                    "width_rate": {
+                        "name": "描边宽度_字体倍率",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
+                        "max": 10,
+                        "step": 0.01
+                    },
+                    "trace": {
+                        "name": "投影距离",
+                        "type": "spin",
+                        "min": 0,
                         "max": 100,
                         "step": 0.1
                     }
@@ -186,7 +197,8 @@
                 "args": {
                     "fillcolor": "#eeeeee",
                     "shadowforce": 5,
-                    "shadowR": 1
+                    "shadowR": 1,
+                    "shadowR_ex": 3
                 },
                 "argstype": {
                     "fillcolor": {
@@ -201,10 +213,17 @@
                         "step": 1
                     },
                     "shadowR": {
-                        "name": "阴影半径_倍率",
+                        "name": "阴影半径_字体倍率",
                         "type": "spin",
-                        "min": 0.1,
+                        "min": 0,
                         "max": 10,
+                        "step": 0.01
+                    },
+                    "shadowR_ex": {
+                        "name": "阴影半径_固定值",
+                        "type": "spin",
+                        "min": 0,
+                        "max": 100,
                         "step": 0.1
                     }
                 }
@@ -213,22 +232,30 @@
     },
     "metadata": {
         "vndb": {
+            "auto": true,
             "name": "vndb",
             "downloadtasks": [],
+            "searchfordatatasks": [],
             "useproxy": false,
             "target": "vid",
-            "idtype": 0
+            "idtype": 0,
+            "args": {
+                "Token": ""
+            }
         },
         "dlsite": {
+            "auto": false,
             "name": "dlsite",
             "downloadtasks": [],
+            "searchfordatatasks": [],
             "useproxy": true,
-            "target": "dlsiteid",
-            "idtype": 1
+            "target": "dlsiteid"
         },
         "bangumi": {
+            "auto": true,
             "name": "bangumi",
             "downloadtasks": [],
+            "searchfordatatasks": [],
             "useproxy": true,
             "target": "bgmsid",
             "idtype": 0,
@@ -237,11 +264,24 @@
             }
         },
         "fanza": {
+            "auto": false,
             "name": "FanzaGames",
             "downloadtasks": [],
+            "searchfordatatasks": [],
             "useproxy": true,
-            "target": "fanzaid",
-            "idtype": 1
+            "target": "fanzaid"
+        },
+        "steam": {
+            "auto": false,
+            "name": "steam",
+            "downloadtasks": [],
+            "searchfordatatasks": [],
+            "useproxy": true,
+            "target": "steamid",
+            "args": {
+                "userid": "",
+                "steamLoginSecure": ""
+            }
         }
     },
     "relationlinks": [
@@ -281,7 +321,9 @@
         "changefont": false,
         "changefont_font": "",
         "changecharset": false,
-        "changecharset_charset": 2
+        "changecharset_charset": 2,
+        "limittextlength_use": false,
+        "limittextlength_length": 40
     },
     "requestinterval": 1,
     "keepontop": true,
@@ -289,6 +331,7 @@
     "buttonsize2": 18,
     "language_setted_2.4.5": false,
     "postprocess_rank": [],
+    "audioengine": "mci",
     "transoptimi": {
         "noundict": false,
         "transerrorfix": false,
@@ -298,8 +341,6 @@
         "arabic_reshaper": false
     },
     "uselongtermcache": false,
-    "auto_expand": true,
-    "auto_shrink": true,
     "showintab": true,
     "showintab_sub": true,
     "remove_useless_hook": false,
@@ -390,7 +431,6 @@
     ],
     "codepage_index": 0,
     "removeuseless": false,
-    "vispolicy": 0,
     "currvislistuid": null,
     "multiregion": false,
     "rememberocrregions": false,
@@ -403,6 +443,7 @@
     "transparent": 80,
     "transparent_tool": 50,
     "fontsize": 17.0,
+    "fontsizeori": 17.0,
     "localeswitchmethod": 0,
     "hide_not_exists": false,
     "startgamenototop": true,
@@ -494,6 +535,8 @@
         "onselectcolor1": "#007fff",
         "onfilenoexistscolor1": "#acacac",
         "transparent": 25,
+        "transparentselect": 25,
+        "transparentnotexits": 25,
         "listitemheight": 40,
         "listitemwidth": 300
     },
@@ -535,6 +578,7 @@
             "open_relative_link",
             "open_game_setting",
             "ocr_once",
+            "selectable",
             "minmize",
             "quit"
         ],
@@ -759,9 +803,25 @@
                 "tip": "窗口置顶",
                 "icon": "fa.neuter",
                 "align": 0
+            },
+            "selectable": {
+                "use": false,
+                "tip": "可选取的",
+                "icon": "fa.i-cursor",
+                "align": 0
+            },
+            "searchwordW": {
+                "use": false,
+                "tip": "查词",
+                "icon": "fa.search",
+                "align": 0
             }
         }
     },
+    "disappear_delay_tool": 1,
+    "mousetransparent": false,
+    "adaptive_height": true,
+    "backtransparent": false,
     "showtranexception": true,
     "refresh_on_get_trans": false,
     "languageuse": 0,
@@ -899,16 +959,6 @@
             "_17": {
                 "use": false,
                 "name": "退出",
-                "keystring": ""
-            },
-            "_18": {
-                "use": false,
-                "name": "字体增大（可长按）",
-                "keystring": ""
-            },
-            "_19": {
-                "use": false,
-                "name": "字体缩小（可长按）",
                 "keystring": ""
             },
             "_20": {
@@ -1350,7 +1400,7 @@
         },
         "mdict": {
             "use": false,
-            "name": "mdict",
+            "name": "MDict",
             "args": {
                 "paths": [],
                 "distance": 0,
@@ -1913,7 +1963,6 @@
     "ZoomFactor": 1,
     "realtime_edit_target": "realtime_edit",
     "magpiepath": "",
-    "minifollow": false,
     "movefollow": false,
     "focusnotop": false,
     "autostarthook": true,

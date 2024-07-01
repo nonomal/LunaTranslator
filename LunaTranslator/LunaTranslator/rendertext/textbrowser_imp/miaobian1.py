@@ -3,32 +3,77 @@ from rendertext.textbrowser_imp.base import base
 
 
 class TextLine(base):
+    def moveoffset(self):
+        font = self.font()
+        fontOutLineWidth = (
+            self.config["width"] + font.pointSizeF() * self.config["width_rate"]
+        )
+        return fontOutLineWidth, fontOutLineWidth
+
+    def extraWH(self):
+        font = self.font()
+        fontOutLineWidth = (
+            self.config["width"] + font.pointSizeF() * self.config["width_rate"]
+        )
+        fontOutLineWidth *= 2
+        fontOutLineWidth += self.config["trace"]
+        return (fontOutLineWidth, fontOutLineWidth)
 
     def colorpair(self):
-        return QColor(self.config["fillcolor"]), QColor(self.basecolor)
+        _ = QColor(self.config["fillcolor"]), QColor(self.basecolor)
+        if self.config["reverse"]:
+            _ = reversed(_)
+        return _
 
     def paintText(self, painter: QPainter):
-        self.m_outLineColor, self.m_contentColor = self.colorpair()
-        self.m_fontOutLineWidth = self.config["width"]
 
+        self.m_outLineColor, self.m_contentColor = self.colorpair()
         text = self.text()
         font = self.font()
-        font_m = QFontMetrics(font)
-        path = QPainterPath()
-        path.addText(
-            self.m_fontOutLineWidth,
-            self.m_fontOutLineWidth + font_m.ascent(),
-            font,
-            text,
+        fontOutLineWidth = (
+            self.config["width"] + font.pointSizeF() * self.config["width_rate"]
         )
 
+        pix = QPixmap(self.size())
+        font_m = QFontMetrics(font)
         pen = QPen(
             self.m_outLineColor,
-            self.m_fontOutLineWidth,
+            fontOutLineWidth,
             Qt.PenStyle.SolidLine,
             Qt.PenCapStyle.RoundCap,
             Qt.PenJoinStyle.RoundJoin,
         )
+        path = QPainterPath()
+        path.addText(
+            fontOutLineWidth,
+            fontOutLineWidth + font_m.ascent(),
+            font,
+            text,
+        )
+        pix.fill(Qt.GlobalColor.transparent)
+        pixpainter = QPainter(pix)
+        pixpainter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pixpainter.strokePath(path, pen)
+        pixpainter.end()
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        for i in range(1 + int(10 * self.config["trace"])):
 
-        painter.strokePath(path, pen)
+            painter.drawPixmap(
+                QRectF(
+                    i / 10,
+                    i / 10,
+                    pix.width(),
+                    pix.height(),
+                ),
+                pix,
+                QRectF(0, 0, pix.width(), pix.height()),
+            )
+        path = QPainterPath()
+        path.addText(
+            fontOutLineWidth,
+            fontOutLineWidth + font_m.ascent(),
+            font,
+            text,
+        )
+
         painter.fillPath(path, QBrush(self.m_contentColor))

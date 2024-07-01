@@ -2,9 +2,9 @@ from qtsymbols import *
 from rendertext.somefunctions import dataget
 import gobject, uuid, json, os, functools
 from urllib.parse import quote
-from myutils.config import globalconfig
-from gui.usefulwidget import WebivewWidget, QWebWrap, saveposwindow
-from myutils.utils import checkportavailable
+from myutils.config import globalconfig, static_data
+from myutils.wrapper import tryprint
+from gui.usefulwidget import WebivewWidget, QWebWrap
 
 testsavejs = False
 
@@ -12,31 +12,25 @@ testsavejs = False
 class TextBrowser(QWidget, dataget):
     contentsChanged = pyqtSignal(QSize)
 
+    @tryprint
     def resizeEvent(self, event: QResizeEvent):
-        self.webivewwidget.resize(event.size().width(), event.size().height())
+        self.webivewwidget.resize(event.size())
+        self.masklabel.resize(event.size())
+
+    def setselectable(self, b):
+        self.masklabel.setHidden(b)
 
     def __init__(self, parent) -> None:
-        gobject.refwebview = self
         super().__init__(parent)
         if globalconfig["rendertext_using"] == "QWebEngine":
-            DEBUG_PORT = 5588
-            for i in range(100):
-                if checkportavailable(DEBUG_PORT):
-                    break
-                DEBUG_PORT += 1
-            self.DEBUG_URL = "http://127.0.0.1:%s" % DEBUG_PORT
-            os.environ["QTWEBENGINE_REMOTE_DEBUGGING"] = str(DEBUG_PORT)
             self.webivewwidget = QWebWrap(self)
             self.webivewwidget.on_load.connect(self.__loadextra)
-            self.webivewwidget.internal.setContextMenuPolicy(
-                Qt.ContextMenuPolicy.CustomContextMenu
-            )
-            self.webivewwidget.internal.customContextMenuRequested.connect(self._qwmenu)
-
         else:
             # webview2当会执行alert之类的弹窗js时，若qt窗口不可视，会卡住
             self.webivewwidget = WebivewWidget(self)
 
+        self.masklabel = QLabel(self.webivewwidget)
+        self.masklabel.setMouseTracking(True)
         self.webivewwidget.navigate(
             os.path.abspath(r"LunaTranslator\rendertext\webview.html")
         )
@@ -47,54 +41,7 @@ class TextBrowser(QWidget, dataget):
         self.isfirst = True
         self._qweb_query_word()
 
-    def _qwmenu(self, pos):
-
-        if isqt5:
-            from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineView
-
-            web_menu = self.webivewwidget.internal.page().createStandardContextMenu()
-        else:
-            from PyQt6.QtWebEngineWidgets import QWebEngineView
-            from PyQt6.QtWebEngineCore import QWebEnginePage
-
-            web_menu = self.webivewwidget.internal.createStandardContextMenu()
-        loadinspector = QAction("Inspect")
-        if (
-            self.webivewwidget.internal.page().action(
-                QWebEnginePage.WebAction.InspectElement
-            )
-            not in web_menu.actions()
-        ):
-            web_menu.addAction(loadinspector)
-        action = web_menu.exec(self.webivewwidget.mapToGlobal(pos))
-
-        if action == loadinspector:
-
-            class QMW(saveposwindow):
-                def closeEvent(_self, e):
-                    self.webivewwidget.internal.page().setDevToolsPage(None)
-                    super(QMW, _self).closeEvent(e)
-
-                def __init__(_self) -> None:
-                    super().__init__(
-                        gobject.baseobject.settin_ui,
-                        poslist=globalconfig["qwebinspectgeo"],
-                    )
-                    _self.setWindowTitle("Inspect")
-                    _self.internal = QWebEngineView(_self)
-                    _self.setCentralWidget(_self.internal)
-                    _self.internal.load(QUrl(self.DEBUG_URL))
-                    self.webivewwidget.internal.page().setDevToolsPage(
-                        _self.internal.page()
-                    )
-                    self.webivewwidget.internal.page().triggerAction(
-                        QWebEnginePage.WebAction.InspectElement
-                    )
-
-                    _self.show()
-
-            QMW()
-
+    @tryprint
     def showEvent(self, e):
         if not self.isfirst:
             return
@@ -187,9 +134,6 @@ class TextBrowser(QWidget, dataget):
 
     # native api end
 
-    def setselectable(self, b):
-        pass
-
     def iter_append(self, iter_context_class, origin, atcenter, text, color, cleared):
 
         if iter_context_class not in self.saveiterclasspointer:
@@ -218,13 +162,23 @@ class TextBrowser(QWidget, dataget):
 
         return fmetrics.height()
 
+    def _getstylevalid(self):
+        currenttype = globalconfig["rendertext_using_internal"]["webview"]
+        if currenttype not in static_data["textrender"]["webview"]:
+            currenttype = static_data["textrender"]["webview"][0]
+            globalconfig["rendertext_using_internal"]["webview"] = static_data[
+                "textrender"
+            ]["webview"][0]
+        return currenttype
+
     def _webview_append(self, _id, origin, atcenter, text, tag, flags, color):
 
         fmori, fsori, boldori = self._getfontinfo(origin)
         fmkana, fskana, boldkana = self._getfontinfo_kana()
         kanacolor = self._getkanacolor()
         line_height = self.measureH(fmori, fsori) + globalconfig["extra_space"]
-        style = globalconfig["rendertext_using_internal"]["webview"]
+        style = self._getstylevalid()
+
         styleargs = globalconfig["rendertext"]["webview"][style].get("args", {})
         if len(tag):
             isshowhira, isshow_fenci, isfenciclick = flags
