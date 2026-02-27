@@ -4,53 +4,37 @@ on:
   workflow_dispatch:
   
 jobs:
-  build:
+  buildluna:
+    uses: ./.github/workflows/buildluna.yml
+    # with: 
+    #   createrelease: true
+    secrets: inherit
+  
+  loadversion:
+    # if: ${{inputs.createrelease}}
     runs-on: windows-latest
-    strategy:
-      matrix:
-        include:
-          - architecture: x86
-            fname: LunaTranslator_x86
-          - architecture: x64
-            fname: LunaTranslator
+    outputs:
+      version: ${{ steps.loadversion.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup Windows 10 SDK
-        uses: GuillaumeFalourd/setup-windows10-sdk-action@v2
-        with:
-          sdk-version: 22621
-      - name: Install Python 3.7.9
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.7.9'
-          architecture: ${{ matrix.architecture }}
-      - name: Install Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          
-      - name: Run build script
-        run: |
-          python build.py ${{ matrix.architecture }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.fname }}
-          path: build/${{ matrix.fname }}.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.fname }} sfx
-          path: build/${{ matrix.fname }}.exe
+      - uses: actions/checkout@v4
+      - id: loadversion
+        run: python src/scripts/build_lunatranslator.py loadversion | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: loadversion
-        id: loadversion
-        run: python build.py loadversion | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
-      - name: Release LunaTranslator
-        uses: softprops/action-gh-release@v2
+  release:
+    runs-on: windows-latest
+    needs: [buildluna,loadversion]
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          tag_name: ${{ steps.loadversion.outputs.version }}
+            path: build
+      - uses: softprops/action-gh-release@v2.2.2
+        with:
+          tag_name: ${{ needs.loadversion.outputs.version }}
           files: |
-            build/${{ matrix.fname }}.zip
-            build/${{ matrix.fname }}.exe
+            build/signed/LunaTranslator_x86_winxp.zip
+            build/signed/LunaTranslator_x86_win7.zip
+            build/signed/LunaTranslator_x64_win7.zip
+            build/signed/LunaTranslator_x64_win10.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: curl http://lunatranslator.org/${{ secrets.LUNA_UPDATE_NOTIFY }}

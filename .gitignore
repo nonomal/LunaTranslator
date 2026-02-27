@@ -1,6 +1,4 @@
-LunaTranslator/userconfig
 
-lunatranslator/cache 
 *.pyc
 *.pyc
 *.pyc 
@@ -19,19 +17,35 @@ lunatranslator/cache
 Thumbs.db
 *.recipe
 *.wav 
+*.zip
+*.7z
 build/
-
-plugins/libs/webview2
-plugins/builds
-plugins/build
-temp/
+builds/
 
 
-LunaTranslator/files/plugins
-LunaTranslator/files/ocr
-LunaTranslator/files/data
-LunaTranslator/chrome_cache
-plugins/.vscode/settings.json
+.vscode/settings.json
+src/.cache
+src/userconfig*
+src/cache
+src/chrome_cache
+src/files/ocrmodel
+src/files/*.exe
+src/files/DLL32
+src/files/DLL64
+src/files/LunaHook
+src/files/Magpie
+src/files/Locale
+src/run37.bat
+src/run3732.bat
+settings.json
+src/files/html/yearsummary/yearsummary.value.js
+docs/.vitepress/cache
+docs/node_modules
+docs/.vitepress/dist
+src/Microsoft.WebView2.FixedVersionRuntime.*
+src/translation_record
+src/scripts/temp
+src/cpp/LunaHook/LunaHook/engine32/Leaf.md
 
-LunaTranslator/files/themes
-LunaTranslator/LunaTranslator/rendertext/luna.png
+
+*.dll
